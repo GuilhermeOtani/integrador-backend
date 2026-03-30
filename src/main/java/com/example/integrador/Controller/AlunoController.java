@@ -1,6 +1,7 @@
 package com.example.integrador.Controller;
 
 
+import com.example.integrador.DTO.AlunoDTO;
 import com.example.integrador.Model.Aluno;
 import com.example.integrador.Service.AlunoService;
 import org.springframework.web.bind.annotation.*;
@@ -25,8 +26,8 @@ AlunoController {
     }
 
     @PostMapping("/salvar-aluno")
-    public Aluno salvarAluno(@RequestBody Aluno aluno) {
-        return alunoService.salvarAluno(aluno);
+    public Aluno salvarAluno(@RequestBody AlunoDTO dto) {
+        return alunoService.salvarAluno(dto);
     }
 
     @GetMapping("/buscar-aluno/{id}")
@@ -40,7 +41,7 @@ AlunoController {
     }
 
     @PutMapping("/atualizar-aluno/{id}")
-    public Aluno atualizarAlunoPorId(@PathVariable Long id, @RequestBody Aluno aluno) {
-        return alunoService.atualizarAluno(id, aluno);
+    public Aluno atualizarAlunoPorId(@PathVariable Long id, @RequestBody AlunoDTO dto) {
+        return alunoService.atualizarAluno(id, dto);
     }
 }
