@@ -1,6 +1,8 @@
 package com.example.integrador.Model;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -10,10 +12,18 @@ public class Motorista extends Pessoa {
 
     @Column(name = "cnh")
     private String cnh;
-    @Column(name = "validade_cnh")
-    private LocalDate validadeCnh;
     @Column(name = "salario")
     private BigDecimal salario;
+    @ManyToOne
+    private Onibus onibus;
+
+    public Onibus getOnibus() {
+        return onibus;
+    }
+
+    public void setOnibus(Onibus onibus) {
+        this.onibus = onibus;
+    }
 
     public BigDecimal getSalario() {
         return salario;
@@ -21,14 +31,6 @@ public class Motorista extends Pessoa {
 
     public void setSalario(BigDecimal salario) {
         this.salario = salario;
-    }
-
-    public LocalDate getValidadeCnh() {
-        return validadeCnh;
-    }
-
-    public void setValidadeCnh(LocalDate validadeCnh) {
-        this.validadeCnh = validadeCnh;
     }
 
     public String getCnh() {

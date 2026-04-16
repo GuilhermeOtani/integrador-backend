@@ -1,6 +1,7 @@
 package com.example.integrador.Model;
 
 import com.example.integrador.Enum.StatusOnibus;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 @Entity
@@ -18,20 +19,12 @@ public class Onibus {
     @Enumerated(EnumType.STRING)
     @Column(name = "status_onibus")
     private StatusOnibus statusOnibus;
-    @Column(name = "foto_url")
+    @Lob
+    @Column(name = "foto_url", columnDefinition = "LONGTEXT")
     private String fotoUrl;
     @Column(name = "capacidade")
-    private String Capacidade;
-    @ManyToOne
-    private Motorista motorista;
+    private Double capacidade;
 
-    public Motorista getMotorista() {
-        return motorista;
-    }
-
-    public void setMotorista(Motorista motorista) {
-        this.motorista = motorista;
-    }
 
     public StatusOnibus getStatusOnibus() {
         return statusOnibus;
@@ -49,12 +42,12 @@ public class Onibus {
         this.fotoUrl = fotoUrl;
     }
 
-    public String getCapacidade() {
-        return Capacidade;
+    public Double getCapacidade() {
+        return capacidade;
     }
 
-    public void setCapacidade(String capacidade) {
-        Capacidade = capacidade;
+    public void setCapacidade(Double capacidade) {
+        this.capacidade = capacidade;
     }
 
     public Long getId() {
