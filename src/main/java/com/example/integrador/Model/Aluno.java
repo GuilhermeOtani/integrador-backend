@@ -17,10 +17,21 @@ public class Aluno extends Pessoa {
     private LocalDate dataCadastro;
 
     @ManyToOne
+    private Viagem viagem;
+
+    @ManyToOne
     private Faculdade faculdade;
 
     @ManyToOne
     private Rota rota;
+
+    public Viagem getViagem() {
+        return viagem;
+    }
+
+    public void setViagem(Viagem viagem) {
+        this.viagem = viagem;
+    }
 
     public Rota getRota() {
         return rota;

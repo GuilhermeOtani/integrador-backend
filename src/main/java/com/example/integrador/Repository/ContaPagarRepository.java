@@ -5,4 +5,5 @@ import com.example.integrador.Model.ContaPagar;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ContaPagarRepository extends JpaRepository<ContaPagar, Long> {
+    ContaPagar findTopByMotoristaIdOrderByDataVencimentoDesc(Long motoristaId);
 }

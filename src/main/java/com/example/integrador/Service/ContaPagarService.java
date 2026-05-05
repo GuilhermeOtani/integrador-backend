@@ -1,10 +1,13 @@
 package com.example.integrador.Service;
 
+import com.example.integrador.Enum.StatusFinanceiro;
 import com.example.integrador.Model.ContaPagar;
+import com.example.integrador.Model.Motorista;
 import com.example.integrador.Repository.ContaPagarRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -36,6 +39,16 @@ public class ContaPagarService {
         ContaPagar contapagarSalvo = buscarContaPagarPorId(id);
         BeanUtils.copyProperties(contapagar, contapagarSalvo, "id");
         return contapagarRepository.save(contapagarSalvo);
+    }
+    public void gerarPrimeiraConta(Motorista motorista) {
+        ContaPagar novaConta = new ContaPagar();
+        novaConta.setDescricao("Salário - " + motorista.getNome());
+        novaConta.setValor(motorista.getSalario());
+        novaConta.setDataVencimento(LocalDate.now().plusDays(30));
+        novaConta.setStatus(StatusFinanceiro.PENDENTE);
+        novaConta.setMotorista(motorista);
+
+        contapagarRepository.save(novaConta);
     }
 
 }

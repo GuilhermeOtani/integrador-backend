@@ -1,30 +1,28 @@
 package com.example.integrador.Model;
 
+
 import com.example.integrador.Enum.FormaPagamento;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
-public class Pagamento {
+public class Recebimento {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private BigDecimal valor;
+    private Double valor;
 
-    private LocalDate dataPagamento;
+    private LocalDate dataRecebimento;
 
     @Enumerated(EnumType.STRING)
     private FormaPagamento formaPagamento;
 
     @ManyToOne
-    @JoinColumn(name = "conta_pagar_id")
-    @JsonIgnoreProperties({"pagamentos", "motorista"})
-    private ContaPagar contaPagar;
+    @JoinColumn(name = "conta_receber_id")
+    private ContaReceber contaReceber;
 
     public Long getId() {
         return id;
@@ -34,20 +32,20 @@ public class Pagamento {
         this.id = id;
     }
 
-    public BigDecimal getValor() {
+    public Double getValor() {
         return valor;
     }
 
-    public void setValor(BigDecimal valor) {
+    public void setValor(Double valor) {
         this.valor = valor;
     }
 
-    public LocalDate getDataPagamento() {
-        return dataPagamento;
+    public LocalDate getDataRecebimento() {
+        return dataRecebimento;
     }
 
-    public void setDataPagamento(LocalDate dataPagamento) {
-        this.dataPagamento = dataPagamento;
+    public void setDataRecebimento(LocalDate dataRecebimento) {
+        this.dataRecebimento = dataRecebimento;
     }
 
     public FormaPagamento getFormaPagamento() {
@@ -58,11 +56,11 @@ public class Pagamento {
         this.formaPagamento = formaPagamento;
     }
 
-    public ContaPagar getContaPagar() {
-        return contaPagar;
+    public ContaReceber getContaReceber() {
+        return contaReceber;
     }
 
-    public void setContaPagar(ContaPagar contaPagar) {
-        this.contaPagar = contaPagar;
+    public void setContaReceber(ContaReceber contaReceber) {
+        this.contaReceber = contaReceber;
     }
 }

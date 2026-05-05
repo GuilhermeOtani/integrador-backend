@@ -2,7 +2,9 @@ package com.example.integrador.Model;
 
 import com.example.integrador.Enum.StatusFinanceiro;
 import jakarta.persistence.*;
+import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -14,7 +16,7 @@ public class ContaPagar {
 
     private String descricao;
 
-    private Double valor;
+    private BigDecimal valor;
 
     private LocalDate dataVencimento;
 
@@ -22,15 +24,9 @@ public class ContaPagar {
     private StatusFinanceiro status;
 
     @ManyToOne
-    private Motorista motorista;
+    @JoinColumn(name = "pessoa_id")
+    private Pessoa motorista;
 
-    public String getDescricao() {
-        return descricao;
-    }
-
-    public void setDescricao(String descricao) {
-        this.descricao = descricao;
-    }
 
     public Long getId() {
         return id;
@@ -40,11 +36,19 @@ public class ContaPagar {
         this.id = id;
     }
 
-    public Double getValor() {
+    public String getDescricao() {
+        return descricao;
+    }
+
+    public void setDescricao(String descricao) {
+        this.descricao = descricao;
+    }
+
+    public BigDecimal getValor() {
         return valor;
     }
 
-    public void setValor(Double valor) {
+    public void setValor(BigDecimal valor) {
         this.valor = valor;
     }
 
@@ -64,11 +68,11 @@ public class ContaPagar {
         this.status = status;
     }
 
-    public Motorista getMotorista() {
+    public Pessoa getMotorista() {
         return motorista;
     }
 
-    public void setMotorista(Motorista motorista) {
+    public void setMotorista(Pessoa motorista) {
         this.motorista = motorista;
     }
 }

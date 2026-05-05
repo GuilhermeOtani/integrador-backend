@@ -14,6 +14,8 @@ public class ContaReceber {
 
     private Double valor;
 
+    private String descricao;
+
     private LocalDate dataVencimento;
 
     @Enumerated(EnumType.STRING)
@@ -21,6 +23,14 @@ public class ContaReceber {
 
     @ManyToOne
     private Aluno aluno;
+
+    public String getDescricao() {
+        return descricao;
+    }
+
+    public void setDescricao(String descricao) {
+        this.descricao = descricao;
+    }
 
     public Long getId() {
         return id;

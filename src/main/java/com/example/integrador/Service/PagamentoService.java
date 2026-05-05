@@ -1,41 +1,68 @@
 package com.example.integrador.Service;
 
+import com.example.integrador.DTO.ReciboDTO;
+import com.example.integrador.Enum.FormaPagamento;
+import com.example.integrador.Enum.StatusFinanceiro;
+import com.example.integrador.Model.ContaPagar;
 import com.example.integrador.Model.Pagamento;
+import com.example.integrador.Repository.ContaPagarRepository;
 import com.example.integrador.Repository.PagamentoRepository;
-import org.springframework.beans.BeanUtils;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
 public class PagamentoService {
     private final PagamentoRepository pagamentoRepository;
+    private final ContaPagarRepository contaPagarRepository;
 
-    public PagamentoService(PagamentoRepository pagamentoRepository) {
+    public PagamentoService(PagamentoRepository pagamentoRepository, ContaPagarRepository contaPagarRepository) {
         this.pagamentoRepository = pagamentoRepository;
+        this.contaPagarRepository = contaPagarRepository;
     }
 
-    public List<Pagamento> listarTodosPagamento() {
-        return pagamentoRepository.findAll();
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ReciboDTO buscarReciboDTOPorConta(Long contaId) {
+        Pagamento pagamento = pagamentoRepository.findByContaPagarId(contaId);
+
+        if (pagamento == null) {
+            return null;
+        }
+
+        return ReciboDTO.fromEntity(pagamento);
     }
 
-    public Pagamento salvarPagamento(Pagamento pagamento) {
-        return pagamentoRepository.save(pagamento);
-    }
+    @Transactional
+    public Pagamento realizarPagamento(Long contaId, FormaPagamento formaPagamento, BigDecimal valorPago) {
 
-    public Pagamento buscarPagamentoPorId(Long id) {
-        return pagamentoRepository
-                .findById(id).orElseThrow(() -> new RuntimeException("Pagamento de ID " + id + " não encontrado"));
-    }
+        ContaPagar conta = contaPagarRepository.findById(contaId)
+                .orElseThrow(() -> new RuntimeException("ContaPagar não encontrada!"));
 
-    public void deletarPagamentoPorId(Long id) {
-        pagamentoRepository.deleteById(id);
-    }
+        if (conta.getStatus() == StatusFinanceiro.PAGO) {
+            throw new RuntimeException("Esta conta já foi paga!");
+        }
 
-    public Pagamento atualizarPagamento(Long id, Pagamento pagamento) {
-        Pagamento pagamentoSalvo = buscarPagamentoPorId(id);
-        BeanUtils.copyProperties(pagamento, pagamentoSalvo, "id");
-        return pagamentoRepository.save(pagamentoSalvo);
+        Pagamento recibo = new Pagamento();
+        recibo.setContaPagar(conta);
+        recibo.setDataPagamento(LocalDate.now());
+        recibo.setFormaPagamento(formaPagamento);
+
+        if (valorPago == null) {
+            recibo.setValor(conta.getValor());
+        } else {
+            recibo.setValor(valorPago);
+        }
+
+        pagamentoRepository.save(recibo);
+
+        conta.setStatus(StatusFinanceiro.PAGO);
+        contaPagarRepository.save(conta);
+
+        return recibo;
     }
 
 }
+

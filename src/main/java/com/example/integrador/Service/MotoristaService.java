@@ -15,12 +15,13 @@ import java.util.List;
 public class MotoristaService {
 
     private final MotoristaRepository motoristaRepository;
-
+    private final ContaPagarService contaPagarService;
     private final OnibusRepository onibusRepository;
 
-    public MotoristaService(MotoristaRepository motoristaRepository, OnibusRepository onibusRepository) {
+    public MotoristaService(MotoristaRepository motoristaRepository, OnibusRepository onibusRepository, ContaPagarService contaPagarService) {
         this.motoristaRepository = motoristaRepository;
         this.onibusRepository = onibusRepository;
+        this.contaPagarService = contaPagarService;
     }
 
     public List<Motorista> listarTodosMotoristas() {
@@ -28,15 +29,19 @@ public class MotoristaService {
     }
 
     public Motorista salvarMotorista(MotoristaDTO dto) {
-        Motorista motorista  = new Motorista();
+        Motorista motorista = new Motorista();
         BeanUtils.copyProperties(dto, motorista, "id");
         if (dto.getOnibusId() != null) {
             motorista.setOnibus(onibusRepository.getReferenceById(dto.getOnibusId()));
         } else {
             motorista.setOnibus(null);
         }
-        return motoristaRepository.save(motorista);
+        Motorista motoristaSalvo = motoristaRepository.save(motorista);
+        contaPagarService.gerarPrimeiraConta(motoristaSalvo);
+        return motoristaSalvo;
+
     }
+
     public Motorista buscarMotoristaPorId(Long id) {
         return motoristaRepository
                 .findById(id).orElseThrow(() -> new RuntimeException("Motorista de ID " + id + " não encontrado"));
