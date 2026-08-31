@@ -15,8 +15,7 @@ public class MotoristaDTO {
     private String cnh;
     private BigDecimal salario;
     private String telefone;
-    private Long onibusId;
-    private String numeroIdentificacao;
+
 
     public MotoristaDTO() {
     }
@@ -29,18 +28,7 @@ public class MotoristaDTO {
         this.salario = motorista.getSalario();
         this.telefone = motorista.getTelefone();
 
-        if (motorista.getOnibus() != null) {
-            this.onibusId = motorista.getOnibus().getId();
-            this.numeroIdentificacao = motorista.getOnibus().getNumeroIdentificacao();
-        }
-    }
 
-    public String getNumeroIdentificacao() {
-        return numeroIdentificacao;
-    }
-
-    public void setNumeroIdentificacao(String numeroIdentificacao) {
-        this.numeroIdentificacao = numeroIdentificacao;
     }
 
     public Long getId() {
@@ -51,20 +39,20 @@ public class MotoristaDTO {
         this.id = id;
     }
 
-    public String getCpfCnpj() {
-        return cpfCnpj;
-    }
-
-    public void setCpfCnpj(String cpfCnpj) {
-        this.cpfCnpj = cpfCnpj;
-    }
-
     public String getNome() {
         return nome;
     }
 
     public void setNome(String nome) {
         this.nome = nome;
+    }
+
+    public String getCpfCnpj() {
+        return cpfCnpj;
+    }
+
+    public void setCpfCnpj(String cpfCnpj) {
+        this.cpfCnpj = cpfCnpj;
     }
 
     public String getCnh() {
@@ -89,13 +77,5 @@ public class MotoristaDTO {
 
     public void setTelefone(String telefone) {
         this.telefone = telefone;
-    }
-
-    public Long getOnibusId() {
-        return onibusId;
-    }
-
-    public void setOnibusId(Long onibusId) {
-        this.onibusId = onibusId;
     }
 }

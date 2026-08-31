@@ -3,10 +3,14 @@ package com.example.integrador.Model;
 import com.example.integrador.Enum.NivelUrgencia;
 import com.example.integrador.Enum.StatusChamado;
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.LocalDate;
 
 @Entity
+@Getter
+@Setter
 public class ChamadoManutencao {
 
     @Id
@@ -28,4 +32,5 @@ public class ChamadoManutencao {
 
     @ManyToOne
     private Pessoa responsavel;
+
 }

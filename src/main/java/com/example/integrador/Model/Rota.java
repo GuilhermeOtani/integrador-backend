@@ -1,10 +1,14 @@
 package com.example.integrador.Model;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.List;
 
 @Entity
+@Getter
+@Setter
 public class Rota {
 
     @Id
@@ -18,46 +22,7 @@ public class Rota {
     @ManyToOne
     private Faculdade faculdade;
 
-    @ManyToMany
+    @ManyToMany(cascade = CascadeType.MERGE)
     private List<PontoEmbarque> pontosEmbarque;
 
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getNome() {
-        return nome;
-    }
-
-    public void setNome(String nome) {
-        this.nome = nome;
-    }
-
-    public String getDescricao() {
-        return descricao;
-    }
-
-    public void setDescricao(String descricao) {
-        this.descricao = descricao;
-    }
-
-    public Faculdade getFaculdade() {
-        return faculdade;
-    }
-
-    public void setFaculdade(Faculdade faculdade) {
-        this.faculdade = faculdade;
-    }
-
-    public List<PontoEmbarque> getPontosEmbarque() {
-        return pontosEmbarque;
-    }
-
-    public void setPontosEmbarque(List<PontoEmbarque> pontosEmbarque) {
-        this.pontosEmbarque = pontosEmbarque;
-    }
 }

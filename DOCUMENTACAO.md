@@ -123,9 +123,9 @@ com.example.integrador/
 
 **Subclasses**: Aluno, Motorista
 
-**Relacionamentos**:
-- 1:N com ContaPagar
-- 1:N com ChamadoManutencao
+**Relacionamentos** (Unidirecionais):
+- 1:N com ContaPagar (inverso: `motorista` em ContaPagar)
+- 1:N com ChamadoManutencao (inverso: `responsavel` em ChamadoManutencao)
 
 ---
 
@@ -140,8 +140,8 @@ com.example.integrador/
 **Relacionamentos**:
 - N:1 com Faculdade
 - N:1 com Rota
-- N:1 com Viagem [⚠️ NOVO]
-- 1:N com ContaReceber
+- N:1 com Viagem [⚠️ NOVO] (Bidirecional com mappedBy)
+- 1:N com ContaReceber (Unidirecional: apenas `aluno` em ContaReceber)
 
 ---
 
@@ -152,7 +152,7 @@ com.example.integrador/
 
 **Relacionamentos**:
 - N:1 com Onibus
-- 1:N com Viagem
+- 1:N com Viagem (Unidirecional: apenas `motorista` em Viagem)
 
 ---
 
@@ -205,8 +205,8 @@ com.example.integrador/
 **Relacionamentos**:
 - N:1 com Faculdade
 - N:M com PontoEmbarque
-- 1:N com Aluno
-- 1:N com Viagem
+- 1:N com Aluno (Unidirecional: apenas `rota` em Aluno)
+- 1:N com Viagem (Unidirecional: apenas `rota` em Viagem)
 
 ---
 
@@ -231,11 +231,11 @@ com.example.integrador/
 - `alunos`: Lista de alunos (1:N) [⚠️ NOVO]
 
 **Relacionamentos**:
-- N:1 com Onibus
-- N:1 com Rota
-- N:1 com Motorista
-- N:1 com GradeDiaria
-- 1:N com Aluno [⚠️ NOVO]
+- N:1 com Onibus (Unidirecional)
+- N:1 com Rota (Unidirecional)
+- N:1 com Motorista (Unidirecional)
+- N:1 com GradeDiaria (Bidirecional com mappedBy: `viagens`)
+- 1:N com Aluno (Bidirecional com mappedBy: `viagem`)
 
 ---
 
@@ -247,7 +247,7 @@ com.example.integrador/
 - `viagens`: Lista de viagens (1:N)
 
 **Relacionamentos**:
-- 1:N com Viagem
+- 1:N com Viagem (Bidirecional com mappedBy: `gradeDiaria`)
 
 ---
 
@@ -260,8 +260,8 @@ com.example.integrador/
 - `motorista`: Pessoa associada (N:1) [⚠️ MUDANÇA: agora é `Pessoa` genérica]
 
 **Relacionamentos**:
-- N:1 com Pessoa
-- 1:N com Pagamento
+- N:1 com Pessoa (Unidirecional: apenas `motorista` em ContaPagar)
+- 1:N com Pagamento (Unidirecional: apenas `contaPagar` em Pagamento)
 
 ---
 
@@ -274,8 +274,8 @@ com.example.integrador/
 - `aluno`: Aluno devedor (N:1)
 
 **Relacionamentos**:
-- N:1 com Aluno
-- 1:N com Recebimento
+- N:1 com Aluno (Unidirecional: apenas `aluno` em ContaReceber)
+- 1:N com Recebimento (Unidirecional: apenas `contaReceber` em Recebimento)
 
 ---
 
@@ -317,12 +317,56 @@ com.example.integrador/
 [⚠️ REMOVIDO: `dataResolucao`]
 
 **Relacionamentos**:
-- N:1 com Onibus
-- N:1 com Pessoa
+- N:1 com Onibus (Unidirecional: apenas `onibus` em ChamadoManutencao)
+- N:1 com Pessoa (Unidirecional: apenas `responsavel` em ChamadoManutencao)
 
 ---
 
-## 🔌 Endpoints Principais
+## � Tipos de Relacionamentos
+
+### Relacionamentos Bidirecionais (com `@OneToMany` e `mappedBy`)
+Estes relacionamentos têm navegação em ambas as direções:
+
+1. **Viagem ↔ Aluno**
+   - `Viagem.alunos` (OneToMany, mappedBy="viagem")
+   - `Aluno.viagem` (ManyToOne)
+   - Permite: Um aluno consultado → sua viagem | Uma viagem consultada → seus alunos
+
+2. **GradeDiaria ↔ Viagem**
+   - `GradeDiaria.viagens` (OneToMany, mappedBy="gradeDiaria")
+   - `Viagem.gradeDiaria` (ManyToOne)
+   - Permite: Uma viagem consultada → sua grade | Uma grade consultada → suas viagens
+
+### Relacionamentos Unidirecionais (apenas `@ManyToOne`)
+Estes relacionamentos têm navegação apenas em uma direção:
+
+1. **ContaReceber → Aluno**
+   - Permite: Uma conta consultada → seu aluno
+   - NÃO permite: Um aluno consultado → suas contas (sem query)
+
+2. **ContaPagar → Pessoa**
+   - Permite: Uma conta consultada → seu responsável
+   - NÃO permite: Uma pessoa consultada → suas contas (sem query)
+
+3. **ChamadoManutencao → Pessoa**
+   - Permite: Um chamado consultado → seu responsável
+   - NÃO permite: Uma pessoa consultada → seus chamados (sem query)
+
+4. **Pagamento → ContaPagar**
+   - Permite: Um pagamento consultado → sua conta
+   - NÃO permite: Uma conta consultada → seus pagamentos (sem query)
+
+5. **Recebimento → ContaReceber**
+   - Permite: Um recebimento consultado → sua conta
+   - NÃO permite: Uma conta consultada → seus recebimentos (sem query)
+
+6. **Viagem → Onibus, Rota, Motorista, GradeDiaria** (exceto inverso de GradeDiaria)
+   - Apenas navegação da viagem para seus componentes
+   - NÃO há @OneToMany em Onibus, Rota ou Motorista
+
+---
+
+## �🔌 Endpoints Principais
 
 ### Alunos
 ```

@@ -1,7 +1,7 @@
 package com.example.integrador.Enum;
 
 public enum StatusMatricula {
-    ATIVA,
-    INATIVA,
+    ATIV0,
+    INATIV0,
     PENDENTE
 }

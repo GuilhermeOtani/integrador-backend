@@ -31,7 +31,6 @@ public class PagamentoController {
 
     @GetMapping("/recibo/conta/{contaId}")
     public ResponseEntity<ReciboDTO> buscarRecibo(@PathVariable Long contaId) {
-        // Chama o novo método do Service
         ReciboDTO reciboDTO = pagamentoService.buscarReciboDTOPorConta(contaId);
 
         if (reciboDTO == null) {

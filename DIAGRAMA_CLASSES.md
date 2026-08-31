@@ -31,9 +31,9 @@ Usuario (separada, implementa UserDetails)
 ```
 **Tipos**: ALUNO, MOTORISTA, ADMINISTRADOR, GERENTE_FINANCEIRO, OPERADOR
 
-**Relacionamentos**:
-- `1:N` com ContaPagar (como motorista/responsável)
-- `1:N` com ChamadoManutencao (como responsável)
+**Relacionamentos** (Unidirecionais):
+- `1:N` com ContaPagar (inverso: `motorista` em ContaPagar)
+- `1:N` com ChamadoManutencao (inverso: `responsavel` em ChamadoManutencao)
 
 ---
 
@@ -49,8 +49,8 @@ Usuario (separada, implementa UserDetails)
 **Relacionamentos**:
 - `N:1` com Faculdade
 - `N:1` com Rota
-- `N:1` com Viagem [⚠️ NOVO]
-- `1:N` com ContaReceber
+- `N:1` com Viagem [⚠️ NOVO - Bidirecional com mappedBy]
+- `1:N` com ContaReceber (Unidirecional)
 
 ---
 
@@ -62,7 +62,7 @@ Usuario (separada, implementa UserDetails)
 ```
 **Relacionamentos**:
 - `N:1` com Onibus
-- `1:N` com Viagem
+- `1:N` com Viagem (Unidirecional)
 
 ---
 
@@ -147,11 +147,11 @@ Usuario (separada, implementa UserDetails)
 - alunos: List<Aluno> [⚠️ NOVO]
 ```
 **Relacionamentos**:
-- `N:1` com Onibus
-- `N:1` com Rota
-- `N:1` com Motorista
-- `N:1` com GradeDiaria
-- `1:N` com Aluno [⚠️ NOVO]
+- `N:1` com Onibus (Unidirecional)
+- `N:1` com Rota (Unidirecional)
+- `N:1` com Motorista (Unidirecional)
+- `N:1` com GradeDiaria (Bidirecional - lado inverso em GradeDiaria)
+- `1:N` com Aluno (Bidirecional com mappedBy="viagem")
 
 ---
 
@@ -164,7 +164,7 @@ Usuario (separada, implementa UserDetails)
 - viagens: List<Viagem> (1:N)
 ```
 **Relacionamentos**:
-- `1:N` com Viagem
+- `1:N` com Viagem (Bidirecional com mappedBy="gradeDiaria")
 
 ---
 
@@ -241,8 +241,8 @@ Usuario (separada, implementa UserDetails)
 [⚠️ REMOVIDO: dataResolucao]
 ```
 **Relacionamentos**:
-- `N:1` com Onibus
-- `N:1` com Pessoa
+- `N:1` com Onibus (Unidirecional)
+- `N:1` com Pessoa (Unidirecional)
 
 ---
 

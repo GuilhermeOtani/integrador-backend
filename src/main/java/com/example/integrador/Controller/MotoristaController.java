@@ -31,7 +31,7 @@ public class MotoristaController {
     @PostMapping("/salvar-motorista")
     public MotoristaDTO salvarMotorista(@RequestBody MotoristaDTO dto) {
         Motorista motoristaSalvo = motoristaService.salvarMotorista(dto);
-        return new MotoristaDTO(motoristaSalvo); // Retorna apenas o DTO
+        return new MotoristaDTO(motoristaSalvo);
     }
 
     @GetMapping("/buscar-motorista/{id}")

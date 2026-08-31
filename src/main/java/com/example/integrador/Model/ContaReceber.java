@@ -3,6 +3,7 @@ package com.example.integrador.Model;
 import com.example.integrador.Enum.StatusFinanceiro;
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -12,7 +13,7 @@ public class ContaReceber {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Double valor;
+    private BigDecimal valor;
 
     private String descricao;
 
@@ -40,11 +41,11 @@ public class ContaReceber {
         this.id = id;
     }
 
-    public Double getValor() {
+    public BigDecimal getValor() {
         return valor;
     }
 
-    public void setValor(Double valor) {
+    public void setValor(BigDecimal valor) {
         this.valor = valor;
     }
 

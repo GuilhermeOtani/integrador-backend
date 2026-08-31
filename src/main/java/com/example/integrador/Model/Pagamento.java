@@ -3,11 +3,15 @@ package com.example.integrador.Model;
 import com.example.integrador.Enum.FormaPagamento;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
+@Getter
+@Setter
 public class Pagamento {
 
     @Id
@@ -25,44 +29,5 @@ public class Pagamento {
     @JoinColumn(name = "conta_pagar_id")
     @JsonIgnoreProperties({"pagamentos", "motorista"})
     private ContaPagar contaPagar;
-
-    public Long getId() {
-        return id;
     }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public BigDecimal getValor() {
-        return valor;
-    }
-
-    public void setValor(BigDecimal valor) {
-        this.valor = valor;
-    }
-
-    public LocalDate getDataPagamento() {
-        return dataPagamento;
-    }
-
-    public void setDataPagamento(LocalDate dataPagamento) {
-        this.dataPagamento = dataPagamento;
-    }
-
-    public FormaPagamento getFormaPagamento() {
-        return formaPagamento;
-    }
-
-    public void setFormaPagamento(FormaPagamento formaPagamento) {
-        this.formaPagamento = formaPagamento;
-    }
-
-    public ContaPagar getContaPagar() {
-        return contaPagar;
-    }
-
-    public void setContaPagar(ContaPagar contaPagar) {
-        this.contaPagar = contaPagar;
-    }
-}

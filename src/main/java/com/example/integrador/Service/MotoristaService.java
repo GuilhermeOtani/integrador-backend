@@ -16,11 +16,10 @@ public class MotoristaService {
 
     private final MotoristaRepository motoristaRepository;
     private final ContaPagarService contaPagarService;
-    private final OnibusRepository onibusRepository;
 
-    public MotoristaService(MotoristaRepository motoristaRepository, OnibusRepository onibusRepository, ContaPagarService contaPagarService) {
+    public MotoristaService(MotoristaRepository motoristaRepository,
+                            ContaPagarService contaPagarService) {
         this.motoristaRepository = motoristaRepository;
-        this.onibusRepository = onibusRepository;
         this.contaPagarService = contaPagarService;
     }
 
@@ -31,11 +30,6 @@ public class MotoristaService {
     public Motorista salvarMotorista(MotoristaDTO dto) {
         Motorista motorista = new Motorista();
         BeanUtils.copyProperties(dto, motorista, "id");
-        if (dto.getOnibusId() != null) {
-            motorista.setOnibus(onibusRepository.getReferenceById(dto.getOnibusId()));
-        } else {
-            motorista.setOnibus(null);
-        }
         Motorista motoristaSalvo = motoristaRepository.save(motorista);
         contaPagarService.gerarPrimeiraConta(motoristaSalvo);
         return motoristaSalvo;
@@ -54,11 +48,6 @@ public class MotoristaService {
     public Motorista atualizarMotorista(Long id, MotoristaDTO dto) {
         Motorista motoristaSalvo = buscarMotoristaPorId(id);
         BeanUtils.copyProperties(dto, motoristaSalvo, "id");
-        if (dto.getOnibusId() != null) {
-            motoristaSalvo.setOnibus(onibusRepository.getReferenceById(dto.getOnibusId()));
-        } else {
-            motoristaSalvo.setOnibus(null);
-        }
         return motoristaRepository.save(motoristaSalvo);
     }
 

@@ -5,6 +5,7 @@ import com.example.integrador.Model.ContaPagar;
 import com.example.integrador.Model.Motorista;
 import com.example.integrador.Repository.ContaPagarRepository;
 import com.example.integrador.Repository.MotoristaRepository;
+import jakarta.transaction.Transactional;
 import lombok.Builder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class RotinaFinanceiraService {
         this.contaPagarRepository = contaPagarRepository;
     }
 
+    @Transactional
     @Scheduled(cron = "0 0 2 * * *")
     public void gerarContasRecorrentes() {
 

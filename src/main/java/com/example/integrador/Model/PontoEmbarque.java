@@ -1,8 +1,13 @@
 package com.example.integrador.Model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
+@Getter
+@Setter
 public class PontoEmbarque {
 
     @Id
@@ -10,20 +15,11 @@ public class PontoEmbarque {
     private Long id;
     @Column(name = "ordem_parada")
     private Integer ordemParada;
+    @Column(name = "descricao")
+    private String descricao;
 
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public Integer getOrdemParada() {
-        return ordemParada;
-    }
-
-    public void setOrdemParada(Integer ordemParada) {
-        this.ordemParada = ordemParada;
-    }
+    @ManyToOne
+    @JsonIgnore
+    @JoinColumn(name = "rota_id")
+    private Rota rota;
 }

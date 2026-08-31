@@ -8,6 +8,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
+@Getter
+@Setter
 public class ContaPagar {
 
     @Id
@@ -27,52 +29,4 @@ public class ContaPagar {
     @JoinColumn(name = "pessoa_id")
     private Pessoa motorista;
 
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getDescricao() {
-        return descricao;
-    }
-
-    public void setDescricao(String descricao) {
-        this.descricao = descricao;
-    }
-
-    public BigDecimal getValor() {
-        return valor;
-    }
-
-    public void setValor(BigDecimal valor) {
-        this.valor = valor;
-    }
-
-    public LocalDate getDataVencimento() {
-        return dataVencimento;
-    }
-
-    public void setDataVencimento(LocalDate dataVencimento) {
-        this.dataVencimento = dataVencimento;
-    }
-
-    public StatusFinanceiro getStatus() {
-        return status;
-    }
-
-    public void setStatus(StatusFinanceiro status) {
-        this.status = status;
-    }
-
-    public Pessoa getMotorista() {
-        return motorista;
-    }
-
-    public void setMotorista(Pessoa motorista) {
-        this.motorista = motorista;
-    }
 }
