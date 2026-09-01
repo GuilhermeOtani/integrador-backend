@@ -9,7 +9,6 @@ import java.util.List;
 
     @RestController
     @RequestMapping("/ponto-embarque")
-    @CrossOrigin(origins = "*")
     public class PontoEmbarqueController {
 
         private final PontoEmbarqueService pontoEmbarqueService;

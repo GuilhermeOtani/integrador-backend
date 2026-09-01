@@ -4,13 +4,13 @@ import com.example.integrador.DTO.ViagemDTO;
 import com.example.integrador.Service.ViagemService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/viagem")
-@CrossOrigin(origins = "*")
 public class ViagemController {
 
     private final ViagemService viagemService;
@@ -22,6 +22,12 @@ public class ViagemController {
     @GetMapping("/listar")
     public List<ViagemDTO> listarTodasViagens() {
         return viagemService.listarTodasViagens();
+    }
+
+    @GetMapping("/minhas")
+    public List<ViagemDTO> listarMinhasViagens(JwtAuthenticationToken authentication) {
+        Number pessoaId = authentication.getToken().getClaim("pessoaId");
+        return viagemService.listarMinhasViagens(pessoaId.longValue());
     }
 
     @PostMapping("/salvar-viagem")

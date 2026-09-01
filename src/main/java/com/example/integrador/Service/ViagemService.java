@@ -10,6 +10,7 @@ import com.example.integrador.Repository.RotaRepository;
 import com.example.integrador.Repository.OnibusRepository;
 import com.example.integrador.Repository.MotoristaRepository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
@@ -40,6 +41,14 @@ public class ViagemService {
     public List<ViagemDTO> listarTodasViagens() {
         return viagemRepository.findAll()
                 .stream()
+                .map(ViagemDTO::new)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('MOTORISTA')")
+    public List<ViagemDTO> listarMinhasViagens(Long pessoaId) {
+        return viagemRepository.findAllByMotoristaId(pessoaId).stream()
                 .map(ViagemDTO::new)
                 .toList();
     }

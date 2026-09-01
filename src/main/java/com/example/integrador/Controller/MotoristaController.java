@@ -10,7 +10,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/motorista")
-@CrossOrigin(origins = "*")
 @Transactional
 public class MotoristaController {
 

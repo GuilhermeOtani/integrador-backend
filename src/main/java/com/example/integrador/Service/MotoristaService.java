@@ -1,11 +1,9 @@
 package com.example.integrador.Service;
 
 import com.example.integrador.DTO.MotoristaDTO;
-import com.example.integrador.DTO.MotoristaDTO;
-import com.example.integrador.Model.Motorista;
+import com.example.integrador.Enum.TipoPessoa;
 import com.example.integrador.Model.Motorista;
 import com.example.integrador.Repository.MotoristaRepository;
-import com.example.integrador.Repository.OnibusRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +28,7 @@ public class MotoristaService {
     public Motorista salvarMotorista(MotoristaDTO dto) {
         Motorista motorista = new Motorista();
         BeanUtils.copyProperties(dto, motorista, "id");
+        motorista.setTipoPessoa(TipoPessoa.MOTORISTA);
         Motorista motoristaSalvo = motoristaRepository.save(motorista);
         contaPagarService.gerarPrimeiraConta(motoristaSalvo);
         return motoristaSalvo;
@@ -48,6 +47,7 @@ public class MotoristaService {
     public Motorista atualizarMotorista(Long id, MotoristaDTO dto) {
         Motorista motoristaSalvo = buscarMotoristaPorId(id);
         BeanUtils.copyProperties(dto, motoristaSalvo, "id");
+        motoristaSalvo.setTipoPessoa(TipoPessoa.MOTORISTA);
         return motoristaRepository.save(motoristaSalvo);
     }
 

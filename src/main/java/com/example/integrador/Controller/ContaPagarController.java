@@ -8,7 +8,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/contapagar")
-@CrossOrigin(origins = "*")
 public class ContaPagarController {
 
     private final ContaPagarService contaPagarService;

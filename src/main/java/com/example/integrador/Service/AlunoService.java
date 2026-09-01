@@ -2,6 +2,7 @@ package com.example.integrador.Service;
 
 
 import com.example.integrador.Model.Aluno;
+import com.example.integrador.Enum.TipoPessoa;
 import com.example.integrador.Repository.AlunoRepository;
 import com.example.integrador.Repository.FaculdadeRepository;
 import org.springframework.beans.BeanUtils;
@@ -30,6 +31,7 @@ public class AlunoService {
     public Aluno salvarAluno(AlunoDTO dto) {
         Aluno aluno = new Aluno();
         BeanUtils.copyProperties(dto, aluno, "id");
+        aluno.setTipoPessoa(TipoPessoa.ALUNO);
         if (dto.getFaculdadeId() != null) {
             aluno.setFaculdade(faculdadeRepository.getReferenceById(dto.getFaculdadeId()));
         } else {
@@ -50,6 +52,7 @@ public class AlunoService {
     public Aluno atualizarAluno(Long id, AlunoDTO dto) {
         Aluno alunoSalvo = buscarAlunoPorId(id);
         BeanUtils.copyProperties(dto, alunoSalvo, "id");
+        alunoSalvo.setTipoPessoa(TipoPessoa.ALUNO);
         if (dto.getFaculdadeId() != null) {
             alunoSalvo.setFaculdade(faculdadeRepository.getReferenceById(dto.getFaculdadeId()));
         } else {

@@ -8,7 +8,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/rota")
-@CrossOrigin(origins = "*")
 public class RotaController {
 
     private final RotaService rotaService;

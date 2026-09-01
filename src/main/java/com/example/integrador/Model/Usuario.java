@@ -1,6 +1,7 @@
 package com.example.integrador.Model;
 
 import com.example.integrador.Enum.TipoPessoa;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -16,12 +17,18 @@ public class Usuario implements UserDetails {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
     private Long id;
-    @Column(name = "email")
+    @Column(name = "email", nullable = false, unique = true)
     private String email;
-    @Column(name = "senha")
+    @JsonIgnore
+    @Column(name = "senha", nullable = false)
     private String senha;
     @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_pessoa", nullable = false)
     private TipoPessoa tipoPessoa;
+
+    @OneToOne(fetch = FetchType.EAGER, optional = false)
+    @JoinColumn(name = "pessoa_id", nullable = false, unique = true)
+    private Pessoa pessoa;
 
 
     @Override
@@ -89,5 +96,13 @@ public class Usuario implements UserDetails {
 
     public void setTipoPessoa(TipoPessoa tipoPessoa) {
         this.tipoPessoa = tipoPessoa;
+    }
+
+    public Pessoa getPessoa() {
+        return pessoa;
+    }
+
+    public void setPessoa(Pessoa pessoa) {
+        this.pessoa = pessoa;
     }
 }
