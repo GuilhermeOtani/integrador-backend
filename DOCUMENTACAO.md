@@ -60,7 +60,7 @@ src/main/java/com/example/integrador/
 | Persistência | Spring Data JPA e Hibernate |
 | API web | Spring Web MVC |
 | Segurança | Spring Security 7, JWT HS256 stateless, BCrypt e RBAC |
-| Migrações | Flyway com baseline V1 e evolução JWT V2 |
+| Migrações | Flyway com baseline V1, JWT V2 e administração segura V3 |
 | Validação | Jakarta Bean Validation nos contratos de autenticação e usuários |
 | Banco | PostgreSQL |
 | Redução de boilerplate | Lombok |
@@ -126,11 +126,13 @@ Entidade separada que implementa `UserDetails` e representa exclusivamente as cr
 - `email`: `String`, usado como username;
 - `senha`: hash BCrypt, retornado internamente por `getPassword()` e ignorado na serialização JSON;
 - `tipoPessoa`: `TipoPessoa`, obrigatório;
+- `ativo`: `boolean`, controla se a conta pode autenticar, iniciado como `true`;
+- `tokenVersion`: `long`, versão interna usada para revogar JWTs, iniciada em zero;
 - `pessoa`: relação 1:1 obrigatória e única com `Pessoa`, pela FK `usuario.pessoa_id`.
 
-`getAuthorities()` produz uma autoridade no formato `ROLE_<TIPO_PESSOA>`. As flags de expiração, bloqueio, credencial expirada e habilitação sempre retornam `true`.
+`getAuthorities()` produz uma autoridade no formato `ROLE_<TIPO_PESSOA>`. Expiração, bloqueio e credencial expirada retornam `true`; `isEnabled()` reflete `ativo`.
 
-O e-mail é normalizado para minúsculas e possui unicidade case-insensitive no banco. Uma pessoa só pode estar vinculada a uma conta. Para aluno e motorista, o papel é derivado da subclasse real da pessoa e não é aceito da requisição. O primeiro administrador é criado por configuração externa; administradores autenticados podem criar outros administradores.
+O e-mail é normalizado para minúsculas e possui unicidade case-insensitive no banco. Uma pessoa só pode estar vinculada a uma conta. Para aluno e motorista, o papel é derivado da subclasse real da pessoa e não é aceito da requisição. O primeiro administrador é criado por configuração externa; administradores autenticados podem criar outros administradores. `senha` e `tokenVersion` nunca fazem parte de `UsuarioResponse`.
 
 ### 5.5 Faculdade
 
@@ -409,7 +411,7 @@ Não existem endpoints genéricos de listar, buscar por id, atualizar ou excluir
 | POST | `/auth/login` | público | JWT e resumo seguro do usuário |
 | GET | `/auth/me` | autenticado | usuário, pessoa e perfil específico do papel |
 
-O login recebe `email` e `senha`. A resposta contém `accessToken`, `tokenType="Bearer"`, `expiresIn=7200` e `usuario`. O JWT possui somente `sub`, `email`, `pessoaId`, `roles`, `iat`, `exp` e `iss`.
+O login recebe `email` e `senha`. A resposta contém `accessToken`, `tokenType="Bearer"`, `expiresIn=7200` e `usuario`. O resumo do usuário inclui `ativo`, mas nunca senha ou versão interna. O JWT possui somente `sub`, `email`, `pessoaId`, `roles`, `ver`, `iat`, `exp` e `iss`. `ver` corresponde à versão de segurança atual da conta.
 
 ### 7.12 Administração de usuários
 
@@ -421,8 +423,16 @@ Todos estes endpoints exigem `ROLE_ADMIN`:
 | GET | `/usuarios/pessoas-sem-usuario` | lista alunos e motoristas ainda sem conta |
 | POST | `/usuarios` | cria conta para uma pessoa existente |
 | POST | `/usuarios/admin` | cria uma pessoa-base e sua conta administrativa |
+| PATCH | `/usuarios/{id}` | altera somente o e-mail e retorna a conta segura |
+| PUT | `/usuarios/{id}/senha` | redefine a senha e retorna `204 No Content` |
+| PATCH | `/usuarios/{id}/status` | desativa ou reativa a conta e retorna a conta segura |
+| DELETE | `/usuarios/{id}` | exclui somente o acesso e retorna `204 No Content` |
 
 `POST /usuarios` recebe `pessoaId`, `email` e `senha`. O papel é derivado pelo backend. E-mail repetido ou pessoa já vinculada retorna `409 Conflict`.
+
+Os novos corpos são, respectivamente, `{"email":"novo@email.com"}`, `{"senha":"NovaSenha123"}` e `{"ativo":false}`. E-mail e status iguais ao valor atual são idempotentes. Alterar e-mail, redefinir senha, desativar ou reativar incrementa `tokenVersion` e invalida imediatamente os tokens anteriores.
+
+Não é permitido desativar ou excluir a própria conta, nem remover o último ADMIN ativo. Essas violações e e-mail duplicado retornam `409 Conflict`; id inexistente retorna `404` e validação inválida retorna `400`. A exclusão apaga apenas `Usuario`: a `Pessoa` permanece e, no caso de ALUNO ou MOTORISTA, volta a aparecer em `/usuarios/pessoas-sem-usuario`.
 
 ### 7.13 Viagens do motorista autenticado
 
@@ -495,7 +505,9 @@ Os valores devem ser enviados exatamente como escritos.
 
 A API usa sessão `STATELESS` e OAuth2 Resource Server para validar JWT próprio, sem filtro artesanal. O token é assinado com HS256 por uma chave Base64 externa, tem emissor `integrador-api` e expira em duas horas. CSRF está desabilitado porque a autenticação ocorre exclusivamente pelo cabeçalho Bearer.
 
-As senhas são armazenadas apenas com BCrypt. O JWT é assinado, não criptografado, e por isso não contém senha, CPF/CNPJ, telefone ou outros dados desnecessários. Logout é local: o frontend descarta a sessão, mas um token emitido permanece tecnicamente válido até `exp`.
+As senhas são armazenadas apenas com BCrypt. O JWT é assinado, não criptografado, e por isso não contém senha, CPF/CNPJ, telefone ou outros dados desnecessários. Em cada requisição autenticada, o validador consulta `usuario` pelo `sub` e compara o claim `ver` com `token_version`. Conta inexistente, inativa ou com versão divergente recebe `401`, permitindo revogação imediata após alterações sensíveis. Tokens antigos sem `ver` também recebem `401`.
+
+O logout comum continua local: se nenhuma alteração de segurança ocorrer, o token descartado pelo frontend permanece válido até `exp`. Editar e-mail, redefinir senha, mudar status ou excluir a conta invalida os tokens no servidor imediatamente.
 
 Permissões efetivas:
 
@@ -509,7 +521,7 @@ Permissões efetivas:
 | Contas, pagamentos e financeiro | não | sim | não | não |
 | Demais rotas existentes | não | sim | não | não |
 
-Ausência, expiração ou adulteração do token retorna `401`. Papel insuficiente retorna `403`. Além das regras por URL, o serviço de viagens próprias usa `@PreAuthorize`.
+Ausência, expiração, adulteração, versão divergente ou conta desabilitada/excluída retorna `401`. Papel insuficiente retorna `403`. Além das regras por URL, os serviços sensíveis usam `@PreAuthorize`.
 
 ### CORS efetivo
 
@@ -573,7 +585,8 @@ O elemento Maven inválido que bloqueava a compilação foi removido. O schema a
 
 - `V1__baseline_schema.sql`: descreve o schema completo para bancos novos;
 - `V2__jwt_usuario_pessoa.sql`: preenche `pessoa.tipo_pessoa`, corrige o check de matrícula e adiciona a FK 1:1, obrigatoriedade e unicidades de `usuario`;
-- em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica a V2;
+- `V3__administracao_segura_usuario.sql`: adiciona `usuario.ativo BOOLEAN NOT NULL DEFAULT TRUE` e `usuario.token_version BIGINT NOT NULL DEFAULT 0`, preservando as contas existentes;
+- em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica as evoluções posteriores;
 - depois das migrações, Hibernate usa `ddl-auto=validate` e falha se o mapeamento divergir do banco.
 
 Antes de executar a migração em um ambiente importante, faça backup do banco. Os registros existentes de `pessoa` não são apagados.
@@ -582,7 +595,7 @@ Antes de executar a migração em um ambiente importante, faça backup do banco.
 
 ## 12. Testes e tratamento de erros
 
-Os testes usam H2 em modo PostgreSQL, Flyway desabilitado e `ddl-auto=create-drop`, sem depender do banco local. A suíte cobre carregamento do contexto, bootstrap único, vínculo usuário-pessoa, derivação dos papéis, conflitos, BCrypt, login, claims e duração do JWT, tokens expirado/adulterado, matriz `200/401/403`, isolamento das viagens do motorista, CORS e ausência de senha nas respostas.
+Os testes usam H2 em modo PostgreSQL, Flyway desabilitado e `ddl-auto=create-drop`, sem depender do banco local. A suíte cobre carregamento do contexto, bootstrap único, vínculo usuário-pessoa, derivação dos papéis, conflitos, BCrypt, login, claims e duração do JWT, tokens expirado/adulterado/sem versão, matriz `200/401/403`, isolamento das viagens do motorista, CORS, ausência de senha/versão nas respostas, idempotência, revogação após alterações, conta inativa, proteções administrativas e preservação de `Pessoa` após excluir o acesso.
 
 O `RestExceptionHandler` padroniza as falhas de autenticação, validação, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` ainda mantêm handlers locais antigos para `RuntimeException`, e recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
 
@@ -602,7 +615,7 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, ine
 10. `PagamentoRepository.findByContaPagarId` espera um resultado, embora o modelo não imponha unicidade.
 11. Pessoa, conta a receber e chamado têm camadas internas, mas não API; recebimento possui somente entidade.
 12. A validação Bean Validation foi adicionada aos contratos novos de autenticação e usuários, mas os DTOs CRUD antigos ainda não possuem validação completa.
-13. O JWT não possui revogação nem refresh token; o logout apenas remove a sessão do frontend.
+13. O JWT não possui refresh token nem lista geral de bloqueio; a revogação ocorre por versão da conta e exige uma consulta ao banco em cada requisição autenticada. O logout comum apenas remove a sessão do frontend.
 14. O uso planejado de `sessionStorage` no Angular é simples, mas exige prevenção rigorosa de XSS.
 15. Alguns endpoints antigos retornam entidades JPA e usam tratamento de erro não padronizado.
 
@@ -610,7 +623,7 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, ine
 
 ## 14. Estado da revisão
 
-- **Última revisão:** 31 de agosto de 2026
+- **Última revisão:** 1º de setembro de 2026
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
 - **Status:** em desenvolvimento
 - **Fonte:** implementação atual do repositório

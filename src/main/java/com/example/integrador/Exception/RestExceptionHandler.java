@@ -3,7 +3,7 @@ package com.example.integrador.Exception;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
-import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -41,7 +41,7 @@ public class RestExceptionHandler {
         return detail;
     }
 
-    @ExceptionHandler({BadCredentialsException.class, UsernameNotFoundException.class})
+    @ExceptionHandler({AuthenticationException.class, UsernameNotFoundException.class})
     public ProblemDetail credenciaisInvalidas(RuntimeException exception) {
         return problema(HttpStatus.UNAUTHORIZED, "Não autorizado", "E-mail ou senha inválidos");
     }

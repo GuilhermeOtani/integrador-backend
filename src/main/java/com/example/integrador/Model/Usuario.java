@@ -30,6 +30,12 @@ public class Usuario implements UserDetails {
     @JoinColumn(name = "pessoa_id", nullable = false, unique = true)
     private Pessoa pessoa;
 
+    @Column(name = "ativo", nullable = false)
+    private boolean ativo = true;
+
+    @Column(name = "token_version", nullable = false)
+    private long tokenVersion;
+
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
@@ -63,7 +69,7 @@ public class Usuario implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return ativo;
     }
 
     public Long getId() {
@@ -104,5 +110,21 @@ public class Usuario implements UserDetails {
 
     public void setPessoa(Pessoa pessoa) {
         this.pessoa = pessoa;
+    }
+
+    public boolean isAtivo() {
+        return ativo;
+    }
+
+    public void setAtivo(boolean ativo) {
+        this.ativo = ativo;
+    }
+
+    public long getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(long tokenVersion) {
+        this.tokenVersion = tokenVersion;
     }
 }

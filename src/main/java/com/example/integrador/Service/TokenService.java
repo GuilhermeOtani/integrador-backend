@@ -35,6 +35,7 @@ public class TokenService {
                 .claim("email", usuario.getEmail())
                 .claim("pessoaId", usuario.getPessoa().getId())
                 .claim("roles", List.of(usuario.getTipoPessoa().name()))
+                .claim("ver", usuario.getTokenVersion())
                 .build();
 
         String token = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();

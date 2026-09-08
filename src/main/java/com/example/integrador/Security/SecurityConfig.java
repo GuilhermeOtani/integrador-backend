@@ -83,12 +83,15 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder(SecretKey jwtSecretKey,
-                                 @Value("${app.security.jwt.issuer}") String issuer) {
+                                 @Value("${app.security.jwt.issuer}") String issuer,
+                                 UsuarioJwtValidator usuarioJwtValidator) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                new JwtTimestampValidator(), new JwtIssuerValidator(issuer)));
+                new JwtTimestampValidator(),
+                new JwtIssuerValidator(issuer),
+                usuarioJwtValidator));
         return decoder;
     }
 

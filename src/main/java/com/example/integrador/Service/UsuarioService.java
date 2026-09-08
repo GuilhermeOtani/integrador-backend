@@ -2,7 +2,10 @@ package com.example.integrador.Service;
 
 import com.example.integrador.DTO.CriarAdminRequest;
 import com.example.integrador.DTO.CriarUsuarioRequest;
+import com.example.integrador.DTO.AtualizarEmailUsuarioRequest;
+import com.example.integrador.DTO.AtualizarStatusUsuarioRequest;
 import com.example.integrador.DTO.PessoaDisponivelResponse;
+import com.example.integrador.DTO.RedefinirSenhaUsuarioRequest;
 import com.example.integrador.DTO.UsuarioResponse;
 import com.example.integrador.Enum.TipoPessoa;
 import com.example.integrador.Exception.ConflitoException;
@@ -103,6 +106,57 @@ public class UsuarioService {
                         "Usuário de ID " + id + " não encontrado"));
     }
 
+    @Transactional
+    public UsuarioResponse atualizarEmail(Long id, AtualizarEmailUsuarioRequest request) {
+        Usuario usuario = buscarEntidadePorId(id);
+        String emailNormalizado = normalizarEmail(request.email());
+        if (usuario.getEmail().equals(emailNormalizado)) {
+            return UsuarioResponse.fromEntity(usuario);
+        }
+        if (usuarioRepository.existsByEmailIgnoreCaseAndIdNot(emailNormalizado, id)) {
+            throw new ConflitoException("Já existe uma conta com este e-mail");
+        }
+
+        usuario.setEmail(emailNormalizado);
+        revogarTokens(usuario);
+        return UsuarioResponse.fromEntity(usuarioRepository.save(usuario));
+    }
+
+    @Transactional
+    public void redefinirSenha(Long id, RedefinirSenhaUsuarioRequest request) {
+        Usuario usuario = buscarEntidadePorId(id);
+        usuario.setSenha(passwordEncoder.encode(request.senha()));
+        revogarTokens(usuario);
+        usuarioRepository.save(usuario);
+    }
+
+    @Transactional
+    public UsuarioResponse atualizarStatus(Long id, AtualizarStatusUsuarioRequest request,
+                                           Long usuarioAutenticadoId) {
+        Usuario usuario = buscarEntidadePorId(id);
+        boolean novoStatus = request.ativo();
+        if (usuario.isAtivo() == novoStatus) {
+            return UsuarioResponse.fromEntity(usuario);
+        }
+
+        if (!novoStatus) {
+            impedirAcaoSobrePropriaConta(id, usuarioAutenticadoId, "desativar");
+            impedirRemocaoUltimoAdminAtivo(usuario);
+        }
+
+        usuario.setAtivo(novoStatus);
+        revogarTokens(usuario);
+        return UsuarioResponse.fromEntity(usuarioRepository.save(usuario));
+    }
+
+    @Transactional
+    public void excluirAcesso(Long id, Long usuarioAutenticadoId) {
+        Usuario usuario = buscarEntidadePorId(id);
+        impedirAcaoSobrePropriaConta(id, usuarioAutenticadoId, "excluir");
+        impedirRemocaoUltimoAdminAtivo(usuario);
+        usuarioRepository.delete(usuario);
+    }
+
     private Usuario criarConta(Pessoa pessoa, String email, String senha, TipoPessoa papel) {
         validarEmailDisponivel(email);
         if (usuarioRepository.existsByPessoaId(pessoa.getId())) {
@@ -117,7 +171,28 @@ public class UsuarioService {
         usuario.setEmail(normalizarEmail(email));
         usuario.setSenha(passwordEncoder.encode(senha));
         usuario.setTipoPessoa(papel);
+        usuario.setAtivo(true);
+        usuario.setTokenVersion(0);
         return usuarioRepository.save(usuario);
+    }
+
+    private void impedirAcaoSobrePropriaConta(Long id, Long usuarioAutenticadoId, String acao) {
+        if (id.equals(usuarioAutenticadoId)) {
+            throw new ConflitoException("O administrador não pode " + acao + " a própria conta");
+        }
+    }
+
+    private void impedirRemocaoUltimoAdminAtivo(Usuario usuario) {
+        if (usuario.getTipoPessoa() != TipoPessoa.ADMIN || !usuario.isAtivo()) {
+            return;
+        }
+        if (usuarioRepository.findAllByTipoPessoaAndAtivoTrue(TipoPessoa.ADMIN).size() <= 1) {
+            throw new ConflitoException("Não é possível remover o último administrador ativo");
+        }
+    }
+
+    private void revogarTokens(Usuario usuario) {
+        usuario.setTokenVersion(usuario.getTokenVersion() + 1);
     }
 
     private void validarEmailDisponivel(String email) {

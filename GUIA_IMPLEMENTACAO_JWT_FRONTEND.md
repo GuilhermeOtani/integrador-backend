@@ -34,6 +34,7 @@ export interface UsuarioResumo {
   tipoPessoa: Papel;
   pessoaId: number;
   nome: string;
+  ativo: boolean;
 }
 
 export interface LoginResponse {
@@ -96,7 +97,27 @@ export interface CriarUsuarioRequest {
   email: string;
   senha: string;
 }
+
+export interface AtualizarEmailUsuarioRequest {
+  email: string;
+}
+
+export interface RedefinirSenhaUsuarioRequest {
+  senha: string;
+}
+
+export interface AtualizarStatusUsuarioRequest {
+  ativo: boolean;
+}
+
+export interface PessoaDisponivel {
+  id: number;
+  nome: string;
+  tipoPessoa: 'ALUNO' | 'MOTORISTA';
+}
 ```
+
+`tokenVersion`, hash da senha, papel e pessoa vinculada são internos do backend. Não os inclua nos contratos de resposta nem ofereça campos para editá-los.
 
 ## 3. Centralize a URL da API
 
@@ -499,7 +520,96 @@ Sugestão de menus:
 
 Também esconda botões de cadastrar, editar e excluir nas páginas de leitura do aluno. O backend retornará `403` mesmo que alguém tente chamar esses métodos manualmente.
 
-## 10. Perfil e formatos específicos
+## 10. Administração segura de usuários
+
+Crie ou adapte `src/app/services/usuario.service.ts`. Todos estes métodos são exclusivos de ADMIN:
+
+```ts
+import { inject, Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+import {
+  AtualizarEmailUsuarioRequest,
+  AtualizarStatusUsuarioRequest,
+  CriarUsuarioRequest,
+  PessoaDisponivel,
+  RedefinirSenhaUsuarioRequest,
+  UsuarioResumo,
+} from '../core/auth/auth.models';
+
+@Injectable({ providedIn: 'root' })
+export class UsuarioService {
+  private readonly http = inject(HttpClient);
+  private readonly url = `${environment.apiUrl}/usuarios`;
+
+  listar(): Observable<UsuarioResumo[]> {
+    return this.http.get<UsuarioResumo[]>(this.url);
+  }
+
+  listarPessoasSemUsuario(): Observable<PessoaDisponivel[]> {
+    return this.http.get<PessoaDisponivel[]>(`${this.url}/pessoas-sem-usuario`);
+  }
+
+  criar(dados: CriarUsuarioRequest): Observable<UsuarioResumo> {
+    return this.http.post<UsuarioResumo>(this.url, dados);
+  }
+
+  atualizarEmail(id: number, email: string): Observable<UsuarioResumo> {
+    const dados: AtualizarEmailUsuarioRequest = { email: email.trim() };
+    return this.http.patch<UsuarioResumo>(`${this.url}/${id}`, dados);
+  }
+
+  redefinirSenha(id: number, senha: string): Observable<void> {
+    const dados: RedefinirSenhaUsuarioRequest = { senha };
+    return this.http.put<void>(`${this.url}/${id}/senha`, dados);
+  }
+
+  atualizarStatus(id: number, ativo: boolean): Observable<UsuarioResumo> {
+    const dados: AtualizarStatusUsuarioRequest = { ativo };
+    return this.http.patch<UsuarioResumo>(`${this.url}/${id}/status`, dados);
+  }
+
+  excluirAcesso(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}`);
+  }
+}
+```
+
+Na tabela, mostre `ativo` como tag “Ativo” ou “Inativo” e ofereça estas ações:
+
+- **Editar e-mail**: diálogo com `required` e `email`; o backend normaliza para minúsculas e rejeita duplicidade com `409`.
+- **Redefinir senha**: diálogo com confirmação da senha, mínimo de 8 e máximo de 72 caracteres. A senha nunca volta na resposta.
+- **Desativar/Reativar**: ação principal para suspender ou devolver o acesso sem apagar a conta.
+- **Excluir acesso**: coloque em menu de ações perigosas, com confirmação explícita mencionando o e-mail. A exclusão remove somente as credenciais; não remove o aluno ou motorista.
+
+Exemplo de confirmação com PrimeNG:
+
+```ts
+confirmarExclusao(usuario: UsuarioResumo): void {
+  if (usuario.id === this.auth.usuario()?.id) return;
+
+  this.confirmationService.confirm({
+    header: 'Excluir acesso?',
+    message: `A conta ${usuario.email} perderá o acesso. A pessoa cadastrada será preservada.`,
+    icon: 'pi pi-exclamation-triangle',
+    acceptButtonStyleClass: 'p-button-danger',
+    acceptLabel: 'Excluir acesso',
+    rejectLabel: 'Cancelar',
+    accept: () => this.excluirAcesso(usuario.id),
+  });
+}
+```
+
+Desabilite visualmente **Desativar** e **Excluir acesso** quando `usuario.id === auth.usuario()?.id`. O backend também impede essas operações e protege o último ADMIN ativo. Não dependa apenas do bloqueio visual.
+
+Depois de cada operação bem-sucedida, atualize a lista de usuários. Após criar ou excluir uma conta de ALUNO/MOTORISTA, atualize também `pessoas-sem-usuario`: quando o acesso é excluído, a pessoa preservada volta automaticamente para essa lista.
+
+Editar o e-mail ou redefinir a senha incrementa a versão de segurança e invalida imediatamente todos os JWTs anteriores daquela conta. Se o ADMIN editar o próprio e-mail ou redefinir a própria senha, chame `auth.logout()` após o sucesso e peça um novo login. Desativar, reativar e excluir também invalidam tokens antigos; uma conta reativada precisa fazer um novo login.
+
+Papel, pessoa vinculada, nome, hash BCrypt e versão do token não são editáveis nesta tela. Para alterar dados pessoais, use o cadastro específico de aluno ou motorista.
+
+## 11. Perfil e formatos específicos
 
 O componente de perfil deve chamar `GET /auth/me` e renderizar os blocos conforme o papel:
 
@@ -526,7 +636,7 @@ Com `toSignal`, importe `toSignal` de `@angular/core/rxjs-interop`. No template:
 
 Para ADMIN, `aluno` e `motorista` serão `null`; os dados comuns ficam em `pessoa`.
 
-## 11. Tratamento de erros
+## 12. Tratamento de erros
 
 Crie uma função reutilizável:
 
@@ -545,8 +655,10 @@ export function mensagemApi(error: HttpErrorResponse): string {
       return 'Sua sessão é inválida ou expirou. Entre novamente.';
     case 403:
       return 'Você não possui permissão para esta operação.';
+    case 404:
+      return problem?.detail ?? 'A conta não foi encontrada. Atualize a tabela.';
     case 409:
-      return problem?.detail ?? 'Já existe um registro com estes dados.';
+      return problem?.detail ?? 'A operação entra em conflito com o estado atual.';
     default:
       return problem?.detail ?? 'Ocorreu um erro inesperado.';
   }
@@ -557,11 +669,12 @@ Tratamento visual recomendado:
 
 - `401`: limpar a sessão e redirecionar ao login;
 - `403`: manter a sessão e mostrar “sem permissão”;
-- `409`: manter o formulário e destacar e-mail/pessoa duplicada;
+- `404`: fechar o diálogo e recarregar a tabela, pois o registro pode ter sido removido;
+- `409`: manter o formulário e mostrar a causa, como e-mail duplicado, tentativa sobre a própria conta ou proteção do último ADMIN;
 - status `0`: informar que o backend está indisponível, sem fazer logout;
 - `400` com `errors`: associar mensagens aos campos quando possível.
 
-## 12. Exemplos completos de requisição
+## 13. Exemplos completos de requisição
 
 Login:
 
@@ -587,7 +700,8 @@ Resposta resumida:
     "email": "usuario@email.com",
     "tipoPessoa": "ALUNO",
     "pessoaId": 2,
-    "nome": "Nome"
+    "nome": "Nome",
+    "ativo": true
   }
 }
 ```
@@ -613,7 +727,38 @@ Content-Type: application/json
 }
 ```
 
-## 13. Checklist manual
+Administração de uma conta pelo ADMIN:
+
+```http
+PATCH http://localhost:8080/usuarios/7
+Authorization: Bearer <token-admin>
+Content-Type: application/json
+
+{"email":"novo@email.com"}
+```
+
+```http
+PUT http://localhost:8080/usuarios/7/senha
+Authorization: Bearer <token-admin>
+Content-Type: application/json
+
+{"senha":"NovaSenha123"}
+```
+
+```http
+PATCH http://localhost:8080/usuarios/7/status
+Authorization: Bearer <token-admin>
+Content-Type: application/json
+
+{"ativo":false}
+```
+
+```http
+DELETE http://localhost:8080/usuarios/7
+Authorization: Bearer <token-admin>
+```
+
+## 14. Checklist manual
 
 - [ ] `provideHttpClient(withInterceptors([authInterceptor]))` está em `app.config.ts`.
 - [ ] Login válido grava `integrador.sessao` em `sessionStorage`.
@@ -630,10 +775,19 @@ Content-Type: application/json
 - [ ] Uma chamada manual proibida ainda recebe `403` do backend.
 - [ ] Token apagado, expirado ou adulterado resulta em `401` e retorno ao login.
 - [ ] `409` de e-mail/pessoa duplicada preserva o formulário e mostra a causa.
+- [ ] A tabela diferencia contas ativas e inativas.
+- [ ] Editar e-mail e redefinir senha invalidam imediatamente o token anterior da conta.
+- [ ] Conta inativa não consegue fazer login; após reativação, um novo login funciona.
+- [ ] Desativar e excluir estão bloqueados visualmente para a própria conta.
+- [ ] A API ainda retorna `409` se alguém tentar contornar esse bloqueio visual.
+- [ ] Excluir acesso preserva a pessoa e devolve ALUNO/MOTORISTA a `pessoas-sem-usuario`.
+- [ ] A exclusão possui confirmação explícita e destaque de perigo.
+- [ ] Nenhuma tela permite editar papel, pessoa vinculada, hash ou versão do token.
+- [ ] Edição do próprio e-mail/senha encerra a sessão para um novo login.
 - [ ] Backend desligado produz mensagem de indisponibilidade, não “senha incorreta”.
 - [ ] Logout remove completamente `integrador.sessao`.
 
-## 14. Ordem segura de implementação
+## 15. Ordem segura de implementação
 
 Implemente e teste nesta sequência:
 
@@ -646,6 +800,7 @@ Implemente e teste nesta sequência:
 7. layout e sidebar;
 8. perfil e viagens próprias;
 9. tela administrativa de criação de contas;
-10. testes manuais do checklist.
+10. tabela administrativa e ações de e-mail, senha, status e exclusão;
+11. testes manuais do checklist.
 
 Referências oficiais: [interceptores HTTP funcionais](https://angular.dev/guide/http/interceptors) e [guards de rotas](https://angular.dev/guide/routing/route-guards).

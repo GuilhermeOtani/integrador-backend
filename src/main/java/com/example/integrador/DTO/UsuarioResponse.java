@@ -8,7 +8,8 @@ public record UsuarioResponse(
         String email,
         TipoPessoa tipoPessoa,
         Long pessoaId,
-        String nome
+        String nome,
+        boolean ativo
 ) {
     public static UsuarioResponse fromEntity(Usuario usuario) {
         return new UsuarioResponse(
@@ -16,7 +17,8 @@ public record UsuarioResponse(
                 usuario.getEmail(),
                 usuario.getTipoPessoa(),
                 usuario.getPessoa().getId(),
-                usuario.getPessoa().getNome()
+                usuario.getPessoa().getNome(),
+                usuario.isAtivo()
         );
     }
 }

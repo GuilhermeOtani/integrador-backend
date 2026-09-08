@@ -2,8 +2,11 @@ package com.example.integrador;
 
 import com.example.integrador.DTO.CriarAdminRequest;
 import com.example.integrador.DTO.CriarUsuarioRequest;
+import com.example.integrador.DTO.AtualizarEmailUsuarioRequest;
+import com.example.integrador.DTO.AtualizarStatusUsuarioRequest;
 import com.example.integrador.DTO.LoginRequest;
 import com.example.integrador.DTO.LoginResponse;
+import com.example.integrador.DTO.RedefinirSenhaUsuarioRequest;
 import com.example.integrador.DTO.UsuarioResponse;
 import com.example.integrador.Enum.TipoPessoa;
 import com.example.integrador.Exception.ConflitoException;
@@ -36,10 +39,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -92,6 +99,8 @@ class AuthenticationIntegrationTests {
         assertThat(salvo.getSenha()).startsWith("$2");
         assertThat(passwordEncoder.matches("SenhaAluno123", salvo.getSenha())).isTrue();
         assertThat(salvo.getSenha()).isNotEqualTo("SenhaAluno123");
+        assertThat(response.ativo()).isTrue();
+        assertThat(salvo.getTokenVersion()).isZero();
     }
 
     @Test
@@ -120,6 +129,8 @@ class AuthenticationIntegrationTests {
                 .andExpect(jsonPath("$.expiresIn").value(7200))
                 .andExpect(jsonPath("$.usuario.email").value(ADMIN_EMAIL))
                 .andExpect(jsonPath("$.usuario.tipoPessoa").value("ADMIN"))
+                .andExpect(jsonPath("$.usuario.ativo").value(true))
+                .andExpect(jsonPath("$.usuario.tokenVersion").doesNotExist())
                 .andExpect(jsonPath("$.usuario.senha").doesNotExist());
 
         Jwt jwt = jwtDecoder.decode(tokenAdmin());
@@ -127,6 +138,7 @@ class AuthenticationIntegrationTests {
         assertThat(jwt.getClaimAsString("email")).isEqualTo(ADMIN_EMAIL);
         assertThat(jwt.<Long>getClaim("pessoaId")).isEqualTo(admin.pessoaId());
         assertThat(jwt.getClaimAsStringList("roles")).containsExactly("ADMIN");
+        assertThat(jwt.<Long>getClaim("ver")).isZero();
         assertThat(Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()).getSeconds()).isEqualTo(7200);
         assertThat(jwt.getClaimAsString("iss")).isEqualTo("integrador-api");
     }
@@ -187,7 +199,164 @@ class AuthenticationIntegrationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/usuarios").header("Authorization", bearer(tokenAdmin())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].senha").doesNotExist());
+                .andExpect(jsonPath("$[0].ativo").value(true))
+                .andExpect(jsonPath("$[0].senha").doesNotExist())
+                .andExpect(jsonPath("$[0].tokenVersion").doesNotExist());
+    }
+
+    @Test
+    void administraContaERevogaTokensAposCadaAlteracaoSensivel() throws Exception {
+        Aluno aluno = salvarAluno("Aluno Administrado");
+        UsuarioResponse conta = usuarioService.criarUsuario(new CriarUsuarioRequest(
+                aluno.getId(), "conta@email.com", "SenhaInicial123"));
+        String adminToken = tokenAdmin();
+        String tokenAntigo = token("conta@email.com", "SenhaInicial123");
+
+        mockMvc.perform(patch("/usuarios/{id}", conta.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"email\":\"NOVO@EMAIL.COM\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("novo@email.com"))
+                .andExpect(jsonPath("$.ativo").value(true));
+        mockMvc.perform(get("/auth/me").header("Authorization", bearer(tokenAntigo)))
+                .andExpect(status().isUnauthorized());
+
+        String tokenAposEmail = token("novo@email.com", "SenhaInicial123");
+        mockMvc.perform(put("/usuarios/{id}/senha", conta.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"senha\":\"SenhaNova123\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/auth/me").header("Authorization", bearer(tokenAposEmail)))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"novo@email.com\",\"senha\":\"SenhaInicial123\"}"))
+                .andExpect(status().isUnauthorized());
+
+        String tokenAposSenha = token("novo@email.com", "SenhaNova123");
+        mockMvc.perform(patch("/usuarios/{id}/status", conta.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"ativo\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ativo").value(false));
+        mockMvc.perform(get("/auth/me").header("Authorization", bearer(tokenAposSenha)))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"novo@email.com\",\"senha\":\"SenhaNova123\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("E-mail ou senha inválidos"));
+
+        mockMvc.perform(patch("/usuarios/{id}/status", conta.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"ativo\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ativo").value(true));
+        String tokenReativado = token("novo@email.com", "SenhaNova123");
+
+        mockMvc.perform(delete("/usuarios/{id}", conta.id())
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/auth/me").header("Authorization", bearer(tokenReativado)))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(usuarioRepository.findById(conta.id())).isEmpty();
+        assertThat(pessoaRepository.findById(aluno.getId())).isPresent();
+        assertThat(usuarioService.listarPessoasSemUsuario())
+                .extracting(pessoa -> pessoa.id())
+                .contains(aluno.getId());
+    }
+
+    @Test
+    void alteracoesSaoIdempotentesNormalizadasEProtegemAdministradores() throws Exception {
+        Usuario adminSalvo = usuarioRepository.findById(admin.id()).orElseThrow();
+
+        usuarioService.atualizarEmail(admin.id(), new AtualizarEmailUsuarioRequest(" ADMIN@INTEGRADOR.TEST "));
+        usuarioService.atualizarStatus(admin.id(), new AtualizarStatusUsuarioRequest(true), -1L);
+        assertThat(adminSalvo.getTokenVersion()).isZero();
+
+        assertThatCode(() -> usuarioService.atualizarEmail(
+                admin.id(), new AtualizarEmailUsuarioRequest("admin@integrador.test")))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> usuarioService.atualizarStatus(
+                admin.id(), new AtualizarStatusUsuarioRequest(false), admin.id()))
+                .isInstanceOf(ConflitoException.class)
+                .hasMessageContaining("própria conta");
+        assertThatThrownBy(() -> usuarioService.excluirAcesso(admin.id(), admin.id()))
+                .isInstanceOf(ConflitoException.class)
+                .hasMessageContaining("própria conta");
+        assertThatThrownBy(() -> usuarioService.atualizarStatus(
+                admin.id(), new AtualizarStatusUsuarioRequest(false), -1L))
+                .isInstanceOf(ConflitoException.class)
+                .hasMessageContaining("último administrador");
+        assertThatThrownBy(() -> usuarioService.excluirAcesso(admin.id(), -1L))
+                .isInstanceOf(ConflitoException.class)
+                .hasMessageContaining("último administrador");
+    }
+
+    @Test
+    void validaConflitosPermissoesBcryptEIncrementoDeVersao() throws Exception {
+        Aluno primeiro = salvarAluno("Primeiro");
+        Aluno segundo = salvarAluno("Segundo");
+        UsuarioResponse contaUm = usuarioService.criarUsuario(new CriarUsuarioRequest(
+                primeiro.getId(), "primeiro@email.com", "SenhaPrimeiro123"));
+        UsuarioResponse contaDois = usuarioService.criarUsuario(new CriarUsuarioRequest(
+                segundo.getId(), "segundo@email.com", "SenhaSegundo123"));
+
+        assertThatThrownBy(() -> usuarioService.atualizarEmail(
+                contaDois.id(), new AtualizarEmailUsuarioRequest(" PRIMEIRO@EMAIL.COM ")))
+                .isInstanceOf(ConflitoException.class);
+
+        usuarioService.redefinirSenha(contaUm.id(), new RedefinirSenhaUsuarioRequest("OutraSenha123"));
+        Usuario atualizado = usuarioRepository.findById(contaUm.id()).orElseThrow();
+        assertThat(atualizado.getTokenVersion()).isEqualTo(1);
+        assertThat(passwordEncoder.matches("OutraSenha123", atualizado.getSenha())).isTrue();
+        assertThat(atualizado.getSenha()).isNotEqualTo("OutraSenha123");
+
+        mockMvc.perform(patch("/usuarios/{id}", contaUm.id())
+                        .header("Authorization", bearer(token("segundo@email.com", "SenhaSegundo123")))
+                        .contentType("application/json")
+                        .content("{\"email\":\"sem-permissao@email.com\"}"))
+                .andExpect(status().isForbidden());
+
+        String adminToken = tokenAdmin();
+        mockMvc.perform(put("/usuarios/{id}/senha", contaUm.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"senha\":\"curta\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/usuarios/{id}", contaDois.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"email\":\"PRIMEIRO@EMAIL.COM\"}"))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/usuarios/{id}/senha", 999_999L)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType("application/json")
+                        .content("{\"senha\":\"SenhaValida123\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejeitaTokenSemClaimDeVersao() throws Exception {
+        Instant agora = Instant.now();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer("integrador-api")
+                .subject(admin.id().toString())
+                .issuedAt(agora)
+                .expiresAt(agora.plus(Duration.ofHours(1)))
+                .claim("email", ADMIN_EMAIL)
+                .claim("pessoaId", admin.pessoaId())
+                .claim("roles", List.of("ADMIN"))
+                .build();
+        String semVersao = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+
+        mockMvc.perform(get("/auth/me").header("Authorization", bearer(semVersao)))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -228,8 +397,11 @@ class AuthenticationIntegrationTests {
                 .build();
         String expirado = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
         String valido = tokenAdmin();
-        String adulterado = valido.substring(0, valido.length() - 1)
-                + (valido.endsWith("A") ? "B" : "A");
+        int inicioAssinatura = valido.lastIndexOf('.') + 1;
+        char primeiroCaractere = valido.charAt(inicioAssinatura);
+        String adulterado = valido.substring(0, inicioAssinatura)
+                + (primeiroCaractere == 'A' ? "B" : "A")
+                + valido.substring(inicioAssinatura + 1);
 
         mockMvc.perform(get("/auth/me").header("Authorization", bearer(expirado)))
                 .andExpect(status().isUnauthorized());
