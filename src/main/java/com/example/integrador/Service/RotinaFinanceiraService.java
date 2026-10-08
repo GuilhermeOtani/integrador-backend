@@ -2,11 +2,14 @@ package com.example.integrador.Service;
 
 import com.example.integrador.Enum.StatusFinanceiro;
 import com.example.integrador.Model.ContaPagar;
+import com.example.integrador.Model.Aluno;
+import com.example.integrador.Model.ContaReceber;
 import com.example.integrador.Model.Motorista;
+import com.example.integrador.Repository.AlunoRepository;
 import com.example.integrador.Repository.ContaPagarRepository;
+import com.example.integrador.Repository.ContaReceberRepository;
 import com.example.integrador.Repository.MotoristaRepository;
 import jakarta.transaction.Transactional;
-import lombok.Builder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -18,10 +21,20 @@ public class RotinaFinanceiraService {
 
     private final MotoristaRepository motoristaRepository;
     private final ContaPagarRepository contaPagarRepository;
+    private final AlunoRepository alunoRepository;
+    private final ContaReceberRepository contaReceberRepository;
+    private final ContaReceberService contaReceberService;
 
-    public RotinaFinanceiraService(MotoristaRepository motoristaRepository, ContaPagarRepository contaPagarRepository) {
+    public RotinaFinanceiraService(MotoristaRepository motoristaRepository,
+                                   ContaPagarRepository contaPagarRepository,
+                                   AlunoRepository alunoRepository,
+                                   ContaReceberRepository contaReceberRepository,
+                                   ContaReceberService contaReceberService) {
         this.motoristaRepository = motoristaRepository;
         this.contaPagarRepository = contaPagarRepository;
+        this.alunoRepository = alunoRepository;
+        this.contaReceberRepository = contaReceberRepository;
+        this.contaReceberService = contaReceberService;
     }
 
     @Transactional
@@ -46,6 +59,28 @@ public class RotinaFinanceiraService {
 
                     contaPagarRepository.save(novaConta);
                 }
+            }
+        }
+
+        gerarMatriculasRecorrentes();
+    }
+
+    private void gerarMatriculasRecorrentes() {
+        List<Aluno> alunos = alunoRepository.findAll();
+
+        for (Aluno aluno : alunos) {
+            if (aluno.getMensalidade() == null || aluno.getMensalidade().signum() <= 0) {
+                continue;
+            }
+
+            ContaReceber ultimaConta = contaReceberRepository
+                    .findTopByAlunoIdOrderByDataVencimentoDesc(aluno.getId());
+
+            if (ultimaConta == null) {
+                contaReceberService.gerarPrimeiraConta(aluno);
+            } else if (!ultimaConta.getDataVencimento().isAfter(LocalDate.now())) {
+                contaReceberService.gerarProximaConta(
+                        aluno, ultimaConta.getDataVencimento().plusDays(30));
             }
         }
     }

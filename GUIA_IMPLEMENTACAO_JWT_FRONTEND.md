@@ -515,7 +515,7 @@ Sugestão de menus:
 | Papel | Itens visíveis |
 |---|---|
 | ADMIN | perfil, alunos, motoristas, ônibus, faculdades, rotas, pontos, grades, viagens, contas e usuários |
-| ALUNO | perfil, rotas, pontos e grades |
+| ALUNO | perfil, rotas, pontos, grades e minhas matrículas |
 | MOTORISTA | perfil e minhas viagens |
 
 Também esconda botões de cadastrar, editar e excluir nas páginas de leitura do aluno. O backend retornará `403` mesmo que alguém tente chamar esses métodos manualmente.
@@ -769,7 +769,7 @@ Authorization: Bearer <token-admin>
 - [ ] `GET /auth/me` funciona para ADMIN, ALUNO e MOTORISTA.
 - [ ] A sidebar não aparece na tela de login.
 - [ ] ADMIN vê todos os menus e operações.
-- [ ] ALUNO vê somente perfil, rotas, grades e pontos, sem botões de escrita.
+- [ ] ALUNO vê perfil, rotas, grades, pontos e suas próprias matrículas, sem botões administrativos.
 - [ ] MOTORISTA vê somente perfil e `/viagem/minhas`.
 - [ ] Colar manualmente uma URL proibida leva a `/sem-permissao`.
 - [ ] Uma chamada manual proibida ainda recebe `403` do backend.

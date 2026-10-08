@@ -2,13 +2,16 @@ package com.example.integrador.Service;
 
 
 import com.example.integrador.Model.Aluno;
+import com.example.integrador.Enum.StatusMatricula;
 import com.example.integrador.Enum.TipoPessoa;
 import com.example.integrador.Repository.AlunoRepository;
 import com.example.integrador.Repository.FaculdadeRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.example.integrador.DTO.AlunoDTO;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -18,26 +21,35 @@ public class AlunoService {
     private final AlunoRepository alunoRepository;
 
     private final FaculdadeRepository faculdadeRepository;
+    private final ContaReceberService contaReceberService;
 
-    public AlunoService(AlunoRepository alunoRepository, FaculdadeRepository faculdadeRepository) {
+    public AlunoService(AlunoRepository alunoRepository,
+                        FaculdadeRepository faculdadeRepository,
+                        ContaReceberService contaReceberService) {
         this.alunoRepository = alunoRepository;
         this.faculdadeRepository = faculdadeRepository;
+        this.contaReceberService = contaReceberService;
     }
 
     public List<Aluno> listarTodosAlunos() {
         return alunoRepository.findAll();
     }
 
+    @Transactional
     public Aluno salvarAluno(AlunoDTO dto) {
         Aluno aluno = new Aluno();
         BeanUtils.copyProperties(dto, aluno, "id");
         aluno.setTipoPessoa(TipoPessoa.ALUNO);
+        aluno.setDataCadastro(LocalDate.now());
+        aluno.setStatusMatricula(StatusMatricula.PENDENTE);
         if (dto.getFaculdadeId() != null) {
             aluno.setFaculdade(faculdadeRepository.getReferenceById(dto.getFaculdadeId()));
         } else {
             aluno.setFaculdade(null);
         }
-        return alunoRepository.save(aluno);
+        Aluno alunoSalvo = alunoRepository.save(aluno);
+        contaReceberService.gerarPrimeiraConta(alunoSalvo);
+        return alunoSalvo;
     }
 
     public Aluno buscarAlunoPorId(Long id) {
@@ -49,6 +61,7 @@ public class AlunoService {
         alunoRepository.deleteById(id);
     }
 
+    @Transactional
     public Aluno atualizarAluno(Long id, AlunoDTO dto) {
         Aluno alunoSalvo = buscarAlunoPorId(id);
         BeanUtils.copyProperties(dto, alunoSalvo, "id");
@@ -58,7 +71,9 @@ public class AlunoService {
         } else {
             alunoSalvo.setFaculdade(null);
         }
-        return alunoRepository.save(alunoSalvo);
+        Aluno alunoAtualizado = alunoRepository.save(alunoSalvo);
+        contaReceberService.gerarPrimeiraContaSeAusente(alunoAtualizado);
+        return alunoAtualizado;
     }
 
     public Aluno buscarAlunoPorNome(String nome) {

@@ -2,7 +2,7 @@
 
 ## 1. Escopo desta documentação
 
-Este documento descreve o estado efetivamente implementado no backend em **31 de agosto de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e teste existente.
+Este documento descreve o estado efetivamente implementado no backend em **8 de setembro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
 
 O projeto está em desenvolvimento. Por isso, o documento diferencia recursos expostos pela API REST, recursos apenas internos, regras de negócio implementadas e limitações presentes no código atual.
 
@@ -12,9 +12,9 @@ O projeto está em desenvolvimento. Por isso, o documento diferencia recursos ex
 
 O Projeto Integrador é um backend para gestão de transporte escolar/universitário. A aplicação usa **Java 21**, **Spring Boot 4.0.3**, Spring Web MVC, Spring Data JPA, Spring Security, PostgreSQL e Lombok.
 
-No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos e recibos. Também possui autenticação JWT, consulta do perfil autenticado e administração de contas de acesso.
+No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos e recibos. Também possui autenticação JWT, consulta do perfil autenticado e administração de contas de acesso.
 
-Continuam apenas internos os recursos de pessoa, conta a receber e chamado de manutenção. `Recebimento` existe somente como entidade.
+Continuam apenas internos os recursos de pessoa e chamado de manutenção. Conta a receber e recebimento possuem endpoints específicos para a matrícula do aluno.
 
 ---
 
@@ -60,7 +60,7 @@ src/main/java/com/example/integrador/
 | Persistência | Spring Data JPA e Hibernate |
 | API web | Spring Web MVC |
 | Segurança | Spring Security 7, JWT HS256 stateless, BCrypt e RBAC |
-| Migrações | Flyway com baseline V1, JWT V2 e administração segura V3 |
+| Migrações | Flyway V1–V4, incluindo JWT, administração segura e matrícula financeira |
 | Validação | Jakarta Bean Validation nos contratos de autenticação e usuários |
 | Banco | PostgreSQL |
 | Redução de boilerplate | Lombok |
@@ -217,9 +217,9 @@ Embora o atributo se chame `motorista`, seu tipo permite qualquer registro de `P
 - `descricao`: `String`;
 - `dataVencimento`: `LocalDate`;
 - `status`: `StatusFinanceiro`;
-- `aluno`: relação N:1 com `Aluno`.
+- `aluno`: relação N:1 obrigatória com `Aluno`.
 
-Existe repository e service de CRUD, mas não existe controller REST.
+Cada aluno pode possuir várias cobranças, mas existe no máximo uma por aluno e data de vencimento.
 
 ### 5.14 Recebimento
 
@@ -227,9 +227,9 @@ Existe repository e service de CRUD, mas não existe controller REST.
 - `valor`: `BigDecimal`;
 - `dataRecebimento`: `LocalDate`;
 - `formaPagamento`: `FormaPagamento`;
-- `contaReceber`: relação N:1 com `ContaReceber`.
+- `contaReceber`: relação 1:1 obrigatória com `ContaReceber`.
 
-Existe somente a entidade: não há repository, service ou controller para recebimentos.
+Uma conta pode possuir no máximo um recebimento, impedindo pagamento duplicado.
 
 ### 5.15 ChamadoManutencao
 
@@ -249,9 +249,9 @@ Existe repository e service de CRUD, mas não existe controller REST.
 
 ### AlunoDTO
 
-Usado em `POST` e `PUT` de alunos: `id`, `nome`, `cpfCnpj`, `telefone`, `matricula` e `faculdadeId`.
+Usado em `POST` e `PUT` de alunos: `id`, `nome`, `cpfCnpj`, `telefone`, `matricula`, `mensalidade` e `faculdadeId`. `mensalidade` é obrigatória e deve ser maior ou igual a `0.01`.
 
-Não contém `statusMatricula`, `dataCadastro`, `mensalidade` ou `tipoPessoa`. Esses campos não são definidos pelo contrato atual de criação/atualização de aluno.
+Não aceita `statusMatricula`, `dataCadastro` ou `tipoPessoa`: esses campos são controlados pelo backend.
 
 ### MotoristaDTO
 
@@ -438,9 +438,20 @@ Não é permitido desativar ou excluir a própria conta, nem remover o último A
 
 `GET /viagem/minhas` exige `ROLE_MOTORISTA`. O serviço usa o claim `pessoaId` do JWT e ignora qualquer tentativa de o cliente escolher outro motorista, retornando apenas as viagens vinculadas à pessoa autenticada.
 
-### 7.14 Recursos sem endpoint
+### 7.14 Matrícula e contas a receber
 
-Não há controllers para `Pessoa`, `ContaReceber`, `Recebimento` ou `ChamadoManutencao`.
+| Método | Caminho | Acesso | Resultado |
+|---|---|---|---|
+| GET | `/contareceber/listar` | ADMIN | todas as contas a receber |
+| GET | `/contareceber/minhas` | ALUNO | somente as cobranças do aluno autenticado |
+| POST | `/recebimentos/realizar/{contaId}?formaPagamento=PIX` | ALUNO | registra o valor integral e retorna o recibo |
+| GET | `/recebimentos/recibo/conta/{contaId}` | ALUNO | recibo de uma cobrança própria paga |
+
+O aluno não envia `alunoId`, `pessoaId` nem valor. O backend usa `pessoaId` do JWT e o valor persistido em `conta_receber`. Tentativas de acessar cobrança ou recibo de outro aluno retornam `404`; cobrança já paga retorna `409`.
+
+### 7.15 Recursos sem endpoint
+
+Não há controllers para `Pessoa` ou `ChamadoManutencao`. Conta a receber e recebimento expõem somente os contratos específicos descritos acima, sem CRUD genérico completo.
 
 ---
 
@@ -458,6 +469,8 @@ Não há transação envolvendo explicitamente as duas gravações. Uma falha ao
 
 Para cada motorista, procura a conta com vencimento mais recente. Se ela vencer hoje ou já estiver vencida, cria outra com vencimento 30 dias depois da última. Se o motorista não tiver conta anterior, a rotina não cria a primeira conta.
 
+Para cada aluno com mensalidade maior que zero, aplica a mesma lógica em `conta_receber`. Se ainda não existir cobrança, cria a primeira com vencimento em 30 dias; quando a última vence, cria somente uma nova com vencimento 30 dias depois. A restrição por aluno/data evita duplicidade.
+
 ### 8.3 Pagamento de conta
 
 - a conta precisa existir;
@@ -468,13 +481,19 @@ Para cada motorista, procura a conta com vencimento mais recente. Se ela vencer 
 
 O código também marca a conta como paga quando `valorPago` é inferior ao valor da conta; não existe controle de saldo ou pagamento parcial.
 
-### 8.4 Validação de capacidade da viagem
+### 8.4 Pagamento da matrícula
+
+Ao cadastrar um aluno, `AlunoService` define `dataCadastro` com a data atual, `statusMatricula=PENDENTE` e cria a primeira `ContaReceber` na mesma transação. A conta usa a mensalidade informada, descrição `Matrícula - <nome>`, vencimento em 30 dias e status `PENDENTE`. Ao editar um aluno antigo que ainda não possui cobrança, a primeira conta é criada automaticamente.
+
+O pagamento sempre usa o valor integral persistido na conta. Dentro de uma transação, o backend bloqueia a conta, valida que ela pertence ao `pessoaId` do JWT, impede pagamento duplicado, cria `Recebimento`, marca a conta como `PAGO` e define `statusMatricula=ATIV0`. A operação representa um registro financeiro interno; não existe integração com banco, PIX ou operadora de cartão.
+
+### 8.5 Validação de capacidade da viagem
 
 Ao criar ou atualizar uma viagem com ônibus e faculdades, o serviço soma todos os alunos de cada faculdade cujo status seja `ATIV0` e rejeita a operação quando o total excede `Onibus.capacidade`.
 
 A validação considera todos os alunos ativos das faculdades, não alunos individualmente vinculados à viagem.
 
-### 8.5 Grade diária e viagens
+### 8.6 Grade diária e viagens
 
 Ao salvar uma grade, as viagens do DTO são convertidas e associadas a ela. Ao atualizar com uma lista não nula, a coleção antiga é limpa e substituída. Como há cascade `ALL` e `orphanRemoval=true`, viagens removidas da coleção podem ser excluídas do banco.
 
@@ -517,8 +536,10 @@ Permissões efetivas:
 | `GET /auth/me` | não | sim | sim | sim |
 | `/usuarios/**` | não | sim | não | não |
 | `GET /viagem/minhas` | não | não | sim | não |
+| `GET /contareceber/minhas` | não | não | não | sim |
+| POST/GET de `/recebimentos/**` | não | não | não | sim |
 | GET de `/rota/**`, `/grade-diaria/**` e `/ponto-embarque/**` | não | sim | não | sim |
-| Contas, pagamentos e financeiro | não | sim | não | não |
+| Demais contas, pagamentos e financeiro | não | sim | não | não |
 | Demais rotas existentes | não | sim | não | não |
 
 Ausência, expiração, adulteração, versão divergente ou conta desabilitada/excluída retorna `401`. Papel insuficiente retorna `403`. Além das regras por URL, os serviços sensíveis usam `@PreAuthorize`.
@@ -586,6 +607,7 @@ O elemento Maven inválido que bloqueava a compilação foi removido. O schema a
 - `V1__baseline_schema.sql`: descreve o schema completo para bancos novos;
 - `V2__jwt_usuario_pessoa.sql`: preenche `pessoa.tipo_pessoa`, corrige o check de matrícula e adiciona a FK 1:1, obrigatoriedade e unicidades de `usuario`;
 - `V3__administracao_segura_usuario.sql`: adiciona `usuario.ativo BOOLEAN NOT NULL DEFAULT TRUE` e `usuario.token_version BIGINT NOT NULL DEFAULT 0`, preservando as contas existentes;
+- `V4__matricula_contas_receber.sql`: torna obrigatórios os vínculos financeiros e impede recebimento duplicado e duas cobranças do mesmo aluno no mesmo vencimento;
 - em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica as evoluções posteriores;
 - depois das migrações, Hibernate usa `ddl-auto=validate` e falha se o mapeamento divergir do banco.
 
@@ -595,7 +617,7 @@ Antes de executar a migração em um ambiente importante, faça backup do banco.
 
 ## 12. Testes e tratamento de erros
 
-Os testes usam H2 em modo PostgreSQL, Flyway desabilitado e `ddl-auto=create-drop`, sem depender do banco local. A suíte cobre carregamento do contexto, bootstrap único, vínculo usuário-pessoa, derivação dos papéis, conflitos, BCrypt, login, claims e duração do JWT, tokens expirado/adulterado/sem versão, matriz `200/401/403`, isolamento das viagens do motorista, CORS, ausência de senha/versão nas respostas, idempotência, revogação após alterações, conta inativa, proteções administrativas e preservação de `Pessoa` após excluir o acesso.
+Os testes usam H2 em modo PostgreSQL, Flyway desabilitado e `ddl-auto=create-drop`, sem depender do banco local. A suíte cobre carregamento do contexto, bootstrap único, vínculo usuário-pessoa, derivação dos papéis, conflitos, BCrypt, login, claims e duração do JWT, tokens expirado/adulterado/sem versão, matriz `200/401/403`, isolamento das viagens do motorista, CORS, ausência de senha/versão nas respostas, idempotência, revogação após alterações, conta inativa, proteções administrativas, preservação de `Pessoa`, primeira cobrança da matrícula, recorrência sem duplicidade, pagamento, recibo, propriedade da conta e validação da mensalidade.
 
 O `RestExceptionHandler` padroniza as falhas de autenticação, validação, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` ainda mantêm handlers locais antigos para `RuntimeException`, e recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
 
@@ -608,12 +630,12 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, ine
 3. `Rota` e `PontoEmbarque` modelam a relação de duas formas independentes: N:M de um lado e N:1 do outro.
 4. `GradeDiariaDTO.data` não é persistido nem preenchido nas respostas.
 5. `ViagemDTO` pode omitir faculdades quando a viagem não possui motorista.
-6. O DTO de aluno não aceita status, data de cadastro ou mensalidade. O tipo de pessoa agora é preenchido pelo serviço.
+6. O DTO de aluno aceita mensalidade, mas status e data de cadastro continuam controlados pelo serviço.
 7. O DTO de motorista não aceita tipo de pessoa; o serviço o define automaticamente como `MOTORISTA`.
 8. A capacidade da viagem usa todos os alunos `ATIV0` das faculdades, pois não existe vínculo aluno-viagem.
 9. Pagamento parcial marca a conta integralmente como `PAGO`.
 10. `PagamentoRepository.findByContaPagarId` espera um resultado, embora o modelo não imponha unicidade.
-11. Pessoa, conta a receber e chamado têm camadas internas, mas não API; recebimento possui somente entidade.
+11. Pessoa e chamado possuem camadas internas, mas não API; contas a receber e recebimentos expõem somente o fluxo específico de matrícula.
 12. A validação Bean Validation foi adicionada aos contratos novos de autenticação e usuários, mas os DTOs CRUD antigos ainda não possuem validação completa.
 13. O JWT não possui refresh token nem lista geral de bloqueio; a revogação ocorre por versão da conta e exige uma consulta ao banco em cada requisição autenticada. O logout comum apenas remove a sessão do frontend.
 14. O uso planejado de `sessionStorage` no Angular é simples, mas exige prevenção rigorosa de XSS.
@@ -623,7 +645,7 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, ine
 
 ## 14. Estado da revisão
 
-- **Última revisão:** 1º de setembro de 2026
+- **Última revisão:** 8 de setembro de 2026
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
 - **Status:** em desenvolvimento
 - **Fonte:** implementação atual do repositório

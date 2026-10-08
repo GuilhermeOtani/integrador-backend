@@ -1,5 +1,10 @@
 package com.example.integrador.DTO;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
+
+import java.math.BigDecimal;
+
 public class AlunoDTO {
 
     private Long id;
@@ -7,6 +12,10 @@ public class AlunoDTO {
     private String cpfCnpj;
     private String telefone;
     private String matricula;
+
+    @NotNull
+    @DecimalMin(value = "0.01")
+    private BigDecimal mensalidade;
 
     private Long faculdadeId;
 
@@ -56,5 +65,13 @@ public class AlunoDTO {
 
     public void setFaculdadeId(Long faculdadeId) {
         this.faculdadeId = faculdadeId;
+    }
+
+    public BigDecimal getMensalidade() {
+        return mensalidade;
+    }
+
+    public void setMensalidade(BigDecimal mensalidade) {
+        this.mensalidade = mensalidade;
     }
 }

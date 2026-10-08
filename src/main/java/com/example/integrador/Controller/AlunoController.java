@@ -4,6 +4,7 @@ package com.example.integrador.Controller;
 import com.example.integrador.DTO.AlunoDTO;
 import com.example.integrador.Model.Aluno;
 import com.example.integrador.Service.AlunoService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,7 +26,7 @@ AlunoController {
     }
 
     @PostMapping("/salvar-aluno")
-    public Aluno salvarAluno(@RequestBody AlunoDTO dto) {
+    public Aluno salvarAluno(@Valid @RequestBody AlunoDTO dto) {
         return alunoService.salvarAluno(dto);
     }
 
@@ -40,7 +41,7 @@ AlunoController {
     }
 
     @PutMapping("/atualizar-aluno/{id}")
-    public Aluno atualizarAlunoPorId(@PathVariable Long id, @RequestBody AlunoDTO dto) {
+    public Aluno atualizarAlunoPorId(@PathVariable Long id, @Valid @RequestBody AlunoDTO dto) {
         return alunoService.atualizarAluno(id, dto);
     }
 }

@@ -22,7 +22,8 @@ public class ContaReceber {
     @Enumerated(EnumType.STRING)
     private StatusFinanceiro status;
 
-    @ManyToOne
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "aluno_id", nullable = false)
     private Aluno aluno;
 
     public String getDescricao() {

@@ -25,7 +25,7 @@ public class Recebimento {
     @Enumerated(EnumType.STRING)
     private FormaPagamento formaPagamento;
 
-    @ManyToOne
-    @JoinColumn(name = "conta_receber_id")
+    @OneToOne(optional = false)
+    @JoinColumn(name = "conta_receber_id", nullable = false, unique = true)
     private ContaReceber contaReceber;
 }

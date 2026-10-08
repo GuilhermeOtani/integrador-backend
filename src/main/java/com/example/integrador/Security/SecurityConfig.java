@@ -128,6 +128,9 @@ public class SecurityConfig {
                         .requestMatchers("/auth/me").authenticated()
                         .requestMatchers("/usuarios/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/viagem/minhas").hasRole("MOTORISTA")
+                        .requestMatchers(HttpMethod.GET, "/contareceber/minhas").hasRole("ALUNO")
+                        .requestMatchers(HttpMethod.POST, "/recebimentos/realizar/**").hasRole("ALUNO")
+                        .requestMatchers(HttpMethod.GET, "/recebimentos/recibo/**").hasRole("ALUNO")
                         .requestMatchers(HttpMethod.GET,
                                 "/rota/**", "/grade-diaria/**", "/ponto-embarque/**")
                         .hasAnyRole("ADMIN", "ALUNO")
