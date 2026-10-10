@@ -6,7 +6,7 @@ import com.example.integrador.Model.GradeDiaria;
 import com.example.integrador.Model.Viagem;
 import com.example.integrador.Repository.GradeDiariaRepository;
 import com.example.integrador.Repository.RotaRepository;
-import com.example.integrador.Repository.OnibusRepository;
+import com.example.integrador.Exception.RegraNegocioException;
 import com.example.integrador.Repository.MotoristaRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -20,16 +20,16 @@ public class GradeDiariaService {
 
     private final GradeDiariaRepository gradeDiariaRepository;
     private final RotaRepository rotaRepository;
-    private final OnibusRepository onibusRepository;
+    private final DisponibilidadeOnibusService disponibilidadeOnibus;
     private final MotoristaRepository motoristaRepository;
 
     public GradeDiariaService(GradeDiariaRepository gradeDiariaRepository,
                               RotaRepository rotaRepository,
-                              OnibusRepository onibusRepository,
+                              DisponibilidadeOnibusService disponibilidadeOnibus,
                               MotoristaRepository motoristaRepository) {
         this.gradeDiariaRepository = gradeDiariaRepository;
         this.rotaRepository = rotaRepository;
-        this.onibusRepository = onibusRepository;
+        this.disponibilidadeOnibus = disponibilidadeOnibus;
         this.motoristaRepository = motoristaRepository;
     }
 
@@ -55,7 +55,7 @@ public class GradeDiariaService {
 
         if (dto.getViagens() != null && !dto.getViagens().isEmpty()) {
             List<Viagem> viagensEntity = dto.getViagens().stream()
-                    .map(vDto -> converterParaViagem(vDto, grade))
+                    .map(vDto -> converterParaViagem(vDto, grade, null))
                     .collect(Collectors.toList());
             grade.setViagens(viagensEntity);
         }
@@ -72,12 +72,18 @@ public class GradeDiariaService {
         BeanUtils.copyProperties(dtoAtualizada, gradeSalva, "id", "viagens");
 
         if (dtoAtualizada.getViagens() != null) {
-            gradeSalva.getViagens().clear(); // Limpa as antigas
-
+            var existentes = gradeSalva.getViagens().stream().collect(Collectors.toMap(Viagem::getId, v -> v));
+            var idsRecebidos = new java.util.HashSet<Long>();
+            var atualizadas = new java.util.ArrayList<Viagem>();
             for (ViagemDTO vDto : dtoAtualizada.getViagens()) {
-                Viagem viagem = converterParaViagem(vDto, gradeSalva);
-                gradeSalva.getViagens().add(viagem);
+                Viagem existente = vDto.getId() == null ? null : existentes.get(vDto.getId());
+                if (vDto.getId() != null && (existente == null || !idsRecebidos.add(vDto.getId()))) {
+                    throw new RegraNegocioException("A viagem deve pertencer à grade e não pode ser repetida");
+                }
+                atualizadas.add(converterParaViagem(vDto, gradeSalva, existente));
             }
+            gradeSalva.getViagens().clear();
+            gradeSalva.getViagens().addAll(atualizadas);
         }
 
         GradeDiaria gradeAtualizada = gradeDiariaRepository.save(gradeSalva);
@@ -88,24 +94,26 @@ public class GradeDiariaService {
         gradeDiariaRepository.deleteById(id);
     }
 
-    private Viagem converterParaViagem(ViagemDTO dto, GradeDiaria grade) {
-        Viagem viagem = new Viagem();
-        BeanUtils.copyProperties(dto, viagem, "id");
-
-        if (dto.getId() != null) {
-            viagem.setId(dto.getId());
+    private Viagem converterParaViagem(ViagemDTO dto, GradeDiaria grade, Viagem existente) {
+        if (existente == null && dto.getId() != null) {
+            throw new RegraNegocioException("Uma nova viagem não deve informar id");
         }
+        Viagem viagem = existente == null ? new Viagem() : existente;
+        BeanUtils.copyProperties(dto, viagem, "id");
 
         viagem.setGradeDiaria(grade);
 
         if (dto.getRotaId() != null) {
             viagem.setRota(rotaRepository.getReferenceById(dto.getRotaId()));
+        } else {
+            viagem.setRota(null);
         }
-        if (dto.getOnibusId() != null) {
-            viagem.setOnibus(onibusRepository.getReferenceById(dto.getOnibusId()));
-        }
+        Long anteriorId = viagem.getOnibus() == null ? null : viagem.getOnibus().getId();
+        viagem.setOnibus(disponibilidadeOnibus.resolverAtribuicao(dto.getOnibusId(), anteriorId));
         if (dto.getMotoristaId() != null) {
             viagem.setMotorista(motoristaRepository.getReferenceById(dto.getMotoristaId()));
+        } else {
+            viagem.setMotorista(null);
         }
 
         return viagem;

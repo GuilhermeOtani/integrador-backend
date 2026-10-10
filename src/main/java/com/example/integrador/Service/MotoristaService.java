@@ -6,6 +6,8 @@ import com.example.integrador.Model.Motorista;
 import com.example.integrador.Repository.MotoristaRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 
@@ -14,11 +16,14 @@ public class MotoristaService {
 
     private final MotoristaRepository motoristaRepository;
     private final ContaPagarService contaPagarService;
+    private final ProtecaoHistoricoManutencaoService protecaoHistorico;
 
     public MotoristaService(MotoristaRepository motoristaRepository,
-                            ContaPagarService contaPagarService) {
+                            ContaPagarService contaPagarService,
+                            ProtecaoHistoricoManutencaoService protecaoHistorico) {
         this.motoristaRepository = motoristaRepository;
         this.contaPagarService = contaPagarService;
+        this.protecaoHistorico = protecaoHistorico;
     }
 
     public List<Motorista> listarTodosMotoristas() {
@@ -40,7 +45,10 @@ public class MotoristaService {
                 .findById(id).orElseThrow(() -> new RuntimeException("Motorista de ID " + id + " não encontrado"));
     }
 
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void deletarMotoristaPorId(Long id) {
+        protecaoHistorico.verificarPessoa(id);
         motoristaRepository.deleteById(id);
     }
 

@@ -7,7 +7,6 @@ import com.example.integrador.Model.Viagem;
 import com.example.integrador.Repository.AlunoRepository;
 import com.example.integrador.Repository.ViagemRepository;
 import com.example.integrador.Repository.RotaRepository;
-import com.example.integrador.Repository.OnibusRepository;
 import com.example.integrador.Repository.MotoristaRepository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,18 +21,18 @@ public class ViagemService {
     private final ViagemRepository viagemRepository;
     private final AlunoRepository alunoRepository;
     private final RotaRepository rotaRepository;
-    private final OnibusRepository onibusRepository;
+    private final DisponibilidadeOnibusService disponibilidadeOnibus;
     private final MotoristaRepository motoristaRepository;
 
     public ViagemService(ViagemRepository viagemRepository,
                          AlunoRepository alunoRepository,
                          RotaRepository rotaRepository,
-                         OnibusRepository onibusRepository,
+                         DisponibilidadeOnibusService disponibilidadeOnibus,
                          MotoristaRepository motoristaRepository) {
         this.viagemRepository = viagemRepository;
         this.alunoRepository = alunoRepository;
         this.rotaRepository = rotaRepository;
-        this.onibusRepository = onibusRepository;
+        this.disponibilidadeOnibus = disponibilidadeOnibus;
         this.motoristaRepository = motoristaRepository;
     }
 
@@ -102,11 +101,8 @@ public class ViagemService {
             viagem.setRota(null);
         }
 
-        if (dto.getOnibusId() != null) {
-            viagem.setOnibus(onibusRepository.getReferenceById(dto.getOnibusId()));
-        } else {
-            viagem.setOnibus(null);
-        }
+        Long anteriorId = viagem.getOnibus() == null ? null : viagem.getOnibus().getId();
+        viagem.setOnibus(disponibilidadeOnibus.resolverAtribuicao(dto.getOnibusId(), anteriorId));
 
         if (dto.getMotoristaId() != null) {
             viagem.setMotorista(motoristaRepository.getReferenceById(dto.getMotoristaId()));

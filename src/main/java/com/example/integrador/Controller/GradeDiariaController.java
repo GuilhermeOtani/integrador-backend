@@ -3,6 +3,9 @@ package com.example.integrador.Controller;
 import com.example.integrador.DTO.GradeDiariaDTO;
 import com.example.integrador.Service.GradeDiariaService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import com.example.integrador.Exception.ConflitoException;
+import com.example.integrador.Exception.RecursoNaoEncontradoException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,5 +49,15 @@ public class GradeDiariaController {
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<String> handleRuntimeException(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(ConflitoException.class)
+    public ProblemDetail conflito(ConflitoException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(RecursoNaoEncontradoException.class)
+    public ProblemDetail naoEncontrado(RecursoNaoEncontradoException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 }

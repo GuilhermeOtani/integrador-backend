@@ -2,7 +2,7 @@
 
 ## 1. Escopo desta documentação
 
-Este documento descreve o estado efetivamente implementado no backend em **8 de setembro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
+Este documento descreve o estado efetivamente implementado no backend em **8 de outubro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
 
 O projeto está em desenvolvimento. Por isso, o documento diferencia recursos expostos pela API REST, recursos apenas internos, regras de negócio implementadas e limitações presentes no código atual.
 
@@ -12,9 +12,9 @@ O projeto está em desenvolvimento. Por isso, o documento diferencia recursos ex
 
 O Projeto Integrador é um backend para gestão de transporte escolar/universitário. A aplicação usa **Java 21**, **Spring Boot 4.0.3**, Spring Web MVC, Spring Data JPA, Spring Security, PostgreSQL e Lombok.
 
-No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos e recibos. Também possui autenticação JWT, consulta do perfil autenticado e administração de contas de acesso.
+No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado e administração de contas de acesso.
 
-Continuam apenas internos os recursos de pessoa e chamado de manutenção. Conta a receber e recebimento possuem endpoints específicos para a matrícula do aluno.
+Pessoa continua sem controller próprio. Conta a receber e recebimento possuem endpoints específicos para a matrícula do aluno. Chamados de manutenção possuem abertura/consulta por aluno e motorista e atendimento administrativo.
 
 ---
 
@@ -60,8 +60,8 @@ src/main/java/com/example/integrador/
 | Persistência | Spring Data JPA e Hibernate |
 | API web | Spring Web MVC |
 | Segurança | Spring Security 7, JWT HS256 stateless, BCrypt e RBAC |
-| Migrações | Flyway V1–V4, incluindo JWT, administração segura e matrícula financeira |
-| Validação | Jakarta Bean Validation nos contratos de autenticação e usuários |
+| Migrações | Flyway V1–V5, incluindo JWT, administração segura, matrícula financeira e manutenção |
+| Validação | Jakarta Bean Validation nos contratos de autenticação, usuários, matrícula e manutenção |
 | Banco | PostgreSQL |
 | Redução de boilerplate | Lombok |
 | Build | Maven Wrapper 3.3.4, Maven 3.9.12 configurado |
@@ -234,14 +234,15 @@ Uma conta pode possuir no máximo um recebimento, impedindo pagamento duplicado.
 ### 5.15 ChamadoManutencao
 
 - `id`: `Long`;
-- `descricao`: `String`;
-- `dataAbertura`: `LocalDate`;
-- `urgencia`: `NivelUrgencia`;
-- `status`: `StatusChamado`;
-- `onibus`: relação N:1 com `Onibus`;
-- `responsavel`: relação N:1 com `Pessoa`.
+- `descricao`: `String`, obrigatória, até 2.000 caracteres;
+- `dataAbertura`: `LocalDate`, obrigatória e definida pelo servidor;
+- `urgencia`: `NivelUrgencia`, obrigatória, inicialmente `MEDIA`;
+- `status`: `StatusChamado`, obrigatório, inicialmente `ABERTO`;
+- `onibus`: relação N:1 obrigatória com `Onibus`;
+- `solicitante`: relação N:1 obrigatória com `Pessoa`, mapeada na coluna legada `responsavel_id`;
+- `observacaoAdmin`: `String` opcional, até 2.000 caracteres, obrigatória ao resolver.
 
-Existe repository e service de CRUD, mas não existe controller REST.
+Possui controller, DTOs, repository e serviço com autorização. Não expõe CRUD genérico nem exclusão. A autoria vem do usuário autenticado pelo JWT e não é aceita do cliente. Excluir somente o acesso `Usuario` preserva a pessoa e seus chamados. Pessoa/ônibus com chamados não pode ser excluído fisicamente.
 
 ---
 
@@ -363,7 +364,7 @@ POST e PUT recebem `PontoEmbarque`.
 | PUT | `/viagem/atualizar-viagem/{id}` | recebe e devolve `ViagemDTO` |
 | DELETE | `/viagem/deletar-viagem/{id}` | sem corpo |
 
-Exceções `RuntimeException` nesse controller são convertidas em `400 Bad Request` com a mensagem no corpo.
+Exceções legadas `RuntimeException` nesse controller são convertidas em `400 Bad Request` com a mensagem no corpo. Conflitos de atribuição de ônibus retornam `409` e ônibus inexistente retorna `404`, ambos com `ProblemDetail`.
 
 ### 7.8 Grades diárias
 
@@ -375,7 +376,7 @@ Exceções `RuntimeException` nesse controller são convertidas em `400 Bad Requ
 | PUT | `/grade-diaria/atualizar-grade/{id}` | recebe e devolve `GradeDiariaDTO` |
 | DELETE | `/grade-diaria/deletar-grade/{id}` | sem corpo |
 
-Exceções `RuntimeException` nesse controller são convertidas em `400 Bad Request`.
+Exceções legadas `RuntimeException` nesse controller são convertidas em `400 Bad Request`. Conflitos de atribuição de ônibus retornam `409` e ônibus inexistente retorna `404`, ambos com `ProblemDetail`.
 
 ### 7.9 Contas a pagar
 
@@ -449,9 +450,30 @@ Não é permitido desativar ou excluir a própria conta, nem remover o último A
 
 O aluno não envia `alunoId`, `pessoaId` nem valor. O backend usa `pessoaId` do JWT e o valor persistido em `conta_receber`. Tentativas de acessar cobrança ou recibo de outro aluno retornam `404`; cobrança já paga retorna `409`.
 
-### 7.15 Recursos sem endpoint
+### 7.15 Chamados de manutenção
 
-Não há controllers para `Pessoa` ou `ChamadoManutencao`. Conta a receber e recebimento expõem somente os contratos específicos descritos acima, sem CRUD genérico completo.
+| Método | Caminho | Acesso | Resultado |
+|---|---|---|---|
+| POST | `/chamados-manutencao` | ALUNO/MOTORISTA | abre chamado, `201`, corpo e `Location` |
+| GET | `/chamados-manutencao/minhas` | ALUNO/MOTORISTA | próprios chamados, mais recentes primeiro |
+| GET | `/chamados-manutencao/onibus` | ADMIN/ALUNO/MOTORISTA | todos os ônibus em resumo seguro para seleção |
+| GET | `/chamados-manutencao` | ADMIN | todos; filtros opcionais `status`, `urgencia`, `onibusId` |
+| GET | `/chamados-manutencao/{id}` | ADMIN ou autor | detalhes; chamado alheio retorna `404` |
+| PUT | `/chamados-manutencao/{id}/atendimento` | ADMIN | atendimento atualizado, `200` |
+
+POST recebe somente `{"onibusId":1,"descricao":"Ar-condicionado quebrado"}`. O servidor localiza `Usuario` pelo `sub` do JWT validado e obtém sua `Pessoa`; define autor, data, `ABERTO` e `MEDIA`. Campos extras não permitem alterar esses valores. Ônibus inexistente retorna `404` e descrição vazia/maior que 2.000 retorna `400`.
+
+PUT exige `urgencia` e `status`. Recebe `observacaoAdmin` (resposta atual; omitida/nula é apagada) e opcionalmente `statusOnibus`. Exemplo: `{"urgencia":"ALTA","status":"EM_ANDAMENTO","observacaoAdmin":"Encaminhado à oficina","statusOnibus":"MANUTENCAO"}`. Observação não vazia é obrigatória ao resolver; reabrir é permitido. Sem `statusOnibus`, o estado do ônibus permanece inalterado. A atualização de chamado e ônibus ocorre na mesma transação, sem sobrescrever os demais campos do veículo.
+
+As respostas contêm `id`, `descricao`, `dataAbertura`, `urgencia`, `status`, `observacaoAdmin`, `onibus` (`id`, `numeroIdentificacao`, `placa`, `modelo`, `statusOnibus`) e `solicitante` (`pessoaId`, `nome`, `tipoPessoa`). Não expõem CPF, telefone, foto, senha ou entidade de usuário. A autoria referencia a pessoa e não congela o nome em uma cópia histórica. Não há paginação de servidor; as listas são arrays.
+
+Não há edição do relato/ônibus/autor, cancelamento, exclusão, anexos, chat ou notificações. A consulta e o atendimento não alteram automaticamente o estado do veículo.
+
+Guia específico: `GUIA_MANUTENCAO_ONIBUS_FRONTEND.md`, com exemplos Angular standalone/PrimeNG; o código do frontend não foi modificado nesta entrega.
+
+### 7.16 Recursos sem endpoint
+
+Não há controller para `Pessoa`. Conta a receber, recebimento e chamado de manutenção expõem somente os contratos específicos descritos acima, sem CRUD genérico completo.
 
 ---
 
@@ -495,7 +517,13 @@ A validação considera todos os alunos ativos das faculdades, não alunos indiv
 
 ### 8.6 Grade diária e viagens
 
-Ao salvar uma grade, as viagens do DTO são convertidas e associadas a ela. Ao atualizar com uma lista não nula, a coleção antiga é limpa e substituída. Como há cascade `ALL` e `orphanRemoval=true`, viagens removidas da coleção podem ser excluídas do banco.
+Ao salvar uma grade, as viagens do DTO são convertidas e associadas a ela. Ao atualizar com uma lista não nula, viagens cujos IDs pertencem à grade são atualizadas preservando sua identidade; sem ID são consideradas novas. IDs de outra grade ou repetidos são rejeitados. Como há cascade `ALL` e `orphanRemoval=true`, viagens omitidas da lista podem ser excluídas do banco. Enviar lista nula mantém a coleção.
+
+### 8.7 Disponibilidade do ônibus e manutenção
+
+Somente um ônibus `OPERANDO` pode ser atribuído a uma nova viagem ou substituir o ônibus de uma viagem existente. A regra vale tanto na API de viagens quanto nas viagens das grades e retorna `409` com mensagem explicativa. Estado nulo também impede nova atribuição. É permitido manter o mesmo ônibus numa viagem existente e editar outros dados, mesmo após ele ficar indisponível.
+
+Abrir, resolver ou reabrir um chamado nunca altera automaticamente o ônibus ou cancela viagens. ADMIN escolhe manualmente o estado do ônibus durante o atendimento ou no cadastro. Resolver exige observação, inclusive para chamados duplicados/improcedentes. Pessoa/ônibus com qualquer chamado, inclusive resolvido, tem exclusão física bloqueada com `409`; excluir somente as credenciais continua permitido pelas regras de administração de usuários.
 
 ---
 
@@ -535,6 +563,10 @@ Permissões efetivas:
 | `POST /auth/login` e `OPTIONS` | sim | sim | sim | sim |
 | `GET /auth/me` | não | sim | sim | sim |
 | `/usuarios/**` | não | sim | não | não |
+| POST `/chamados-manutencao` e GET `/chamados-manutencao/minhas` | não | não | sim | sim |
+| GET `/chamados-manutencao/onibus` | não | sim | sim | sim |
+| GET `/chamados-manutencao/{id}` | não | todos | próprios | próprios |
+| Listagem geral e atendimento de manutenção | não | sim | não | não |
 | `GET /viagem/minhas` | não | não | sim | não |
 | `GET /contareceber/minhas` | não | não | não | sim |
 | POST/GET de `/recebimentos/**` | não | não | não | sim |
@@ -608,6 +640,7 @@ O elemento Maven inválido que bloqueava a compilação foi removido. O schema a
 - `V2__jwt_usuario_pessoa.sql`: preenche `pessoa.tipo_pessoa`, corrige o check de matrícula e adiciona a FK 1:1, obrigatoriedade e unicidades de `usuario`;
 - `V3__administracao_segura_usuario.sql`: adiciona `usuario.ativo BOOLEAN NOT NULL DEFAULT TRUE` e `usuario.token_version BIGINT NOT NULL DEFAULT 0`, preservando as contas existentes;
 - `V4__matricula_contas_receber.sql`: torna obrigatórios os vínculos financeiros e impede recebimento duplicado e duas cobranças do mesmo aluno no mesmo vencimento;
+- `V5__chamados_manutencao.sql`: amplia a descrição para 2.000, adiciona observação administrativa, obrigatoriedade dos campos, validação de descrição não vazia e índices; mantém `responsavel_id` e as FKs existentes. Falha com mensagem clara se houver chamado legado incompleto, sem apagar registros nem inventar autor;
 - em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica as evoluções posteriores;
 - depois das migrações, Hibernate usa `ddl-auto=validate` e falha se o mapeamento divergir do banco.
 
@@ -619,7 +652,11 @@ Antes de executar a migração em um ambiente importante, faça backup do banco.
 
 Os testes usam H2 em modo PostgreSQL, Flyway desabilitado e `ddl-auto=create-drop`, sem depender do banco local. A suíte cobre carregamento do contexto, bootstrap único, vínculo usuário-pessoa, derivação dos papéis, conflitos, BCrypt, login, claims e duração do JWT, tokens expirado/adulterado/sem versão, matriz `200/401/403`, isolamento das viagens do motorista, CORS, ausência de senha/versão nas respostas, idempotência, revogação após alterações, conta inativa, proteções administrativas, preservação de `Pessoa`, primeira cobrança da matrícula, recorrência sem duplicidade, pagamento, recibo, propriedade da conta e validação da mensalidade.
 
-O `RestExceptionHandler` padroniza as falhas de autenticação, validação, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` ainda mantêm handlers locais antigos para `RuntimeException`, e recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
+Os testes de manutenção cobrem autoria automática e campos protegidos, permissões, isolamento, filtros, criação por aluno/motorista, tratamento de dados inválidos, atendimento, reabertura, independência entre estados, preservação dos dados do ônibus, histórico após excluir acesso, bloqueio de exclusão física e disponibilidade nas viagens/grades.
+
+`ManutencaoPostgresMigrationTests` é opcional, habilitado por `MANUTENCAO_TEST_DB_URL`, com usuário/senha externos em `MANUTENCAO_TEST_DB_USER` e `MANUTENCAO_TEST_DB_PASSWORD`. Valida V1–V5 em schema vazio, atualização V4→V5 com registros preservados, FKs/obrigatoriedade/limites e falha segura para chamado incompleto. Cria e remove somente schemas temporários próprios `test_manutencao_*`, sem alterar o schema público.
+
+O `RestExceptionHandler` padroniza as falhas de autenticação, validação, formato inválido, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` mantêm handlers locais legados para `RuntimeException`, mas possuem handlers específicos `409/404` para atribuição de ônibus. Recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
 
 ---
 
@@ -635,17 +672,19 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, ine
 8. A capacidade da viagem usa todos os alunos `ATIV0` das faculdades, pois não existe vínculo aluno-viagem.
 9. Pagamento parcial marca a conta integralmente como `PAGO`.
 10. `PagamentoRepository.findByContaPagarId` espera um resultado, embora o modelo não imponha unicidade.
-11. Pessoa e chamado possuem camadas internas, mas não API; contas a receber e recebimentos expõem somente o fluxo específico de matrícula.
+11. Pessoa possui camadas internas, mas não API própria; manutenção, contas a receber e recebimentos expõem fluxos específicos, sem CRUD genérico completo.
 12. A validação Bean Validation foi adicionada aos contratos novos de autenticação e usuários, mas os DTOs CRUD antigos ainda não possuem validação completa.
 13. O JWT não possui refresh token nem lista geral de bloqueio; a revogação ocorre por versão da conta e exige uma consulta ao banco em cada requisição autenticada. O logout comum apenas remove a sessão do frontend.
 14. O uso planejado de `sessionStorage` no Angular é simples, mas exige prevenção rigorosa de XSS.
 15. Alguns endpoints antigos retornam entidades JPA e usam tratamento de erro não padronizado.
+16. Manutenção não possui chat, anexos, notificações, oficina, cobrança ou histórico de alterações da observação; a última gravação administrativa prevalece.
+17. Ônibus indisponível não recebe novas atribuições, mas viagens existentes não são canceladas/remanejadas automaticamente.
 
 ---
 
 ## 14. Estado da revisão
 
-- **Última revisão:** 8 de setembro de 2026
+- **Última revisão:** 8 de outubro de 2026
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
 - **Status:** em desenvolvimento
 - **Fonte:** implementação atual do repositório

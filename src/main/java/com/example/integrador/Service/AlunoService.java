@@ -9,6 +9,7 @@ import com.example.integrador.Repository.FaculdadeRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.example.integrador.DTO.AlunoDTO;
 
 import java.time.LocalDate;
@@ -22,13 +23,16 @@ public class AlunoService {
 
     private final FaculdadeRepository faculdadeRepository;
     private final ContaReceberService contaReceberService;
+    private final ProtecaoHistoricoManutencaoService protecaoHistorico;
 
     public AlunoService(AlunoRepository alunoRepository,
                         FaculdadeRepository faculdadeRepository,
-                        ContaReceberService contaReceberService) {
+                        ContaReceberService contaReceberService,
+                        ProtecaoHistoricoManutencaoService protecaoHistorico) {
         this.alunoRepository = alunoRepository;
         this.faculdadeRepository = faculdadeRepository;
         this.contaReceberService = contaReceberService;
+        this.protecaoHistorico = protecaoHistorico;
     }
 
     public List<Aluno> listarTodosAlunos() {
@@ -57,7 +61,10 @@ public class AlunoService {
                 .findById(id).orElseThrow(() -> new RuntimeException("Aluno de ID " + id + " não encontrado"));
     }
 
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void deletarAlunoPorId(Long id) {
+        protecaoHistorico.verificarPessoa(id);
         alunoRepository.deleteById(id);
     }
 

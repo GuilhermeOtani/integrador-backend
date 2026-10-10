@@ -4,6 +4,8 @@ import com.example.integrador.Model.Onibus;
 import com.example.integrador.Repository.OnibusRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 
@@ -11,9 +13,11 @@ import java.util.List;
 public class OnibusService {
 
     private final OnibusRepository onibusRepository;
+    private final ProtecaoHistoricoManutencaoService protecaoHistorico;
 
-    public OnibusService(OnibusRepository onibusRepository) {
+    public OnibusService(OnibusRepository onibusRepository, ProtecaoHistoricoManutencaoService protecaoHistorico) {
         this.onibusRepository = onibusRepository;
+        this.protecaoHistorico = protecaoHistorico;
     }
 
     public List<Onibus> listarTodasOnibus() {
@@ -29,7 +33,10 @@ public class OnibusService {
                 .findById(id).orElseThrow(() -> new RuntimeException("Onibus de ID " + id + " não encontrado"));
     }
 
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void deletarOnibusPorId(Long id) {
+        protecaoHistorico.verificarOnibus(id);
         onibusRepository.deleteById(id);
     }
 
