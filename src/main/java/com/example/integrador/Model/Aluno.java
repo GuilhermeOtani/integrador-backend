@@ -14,6 +14,10 @@ import java.time.LocalDate;
 @Setter
 public class Aluno extends Pessoa {
 
+    // Definição explícita mantém NOT NULL/default também para os outros subtipos no schema H2.
+    @Column(name = "arquivado", nullable = false, columnDefinition = "boolean not null default false")
+    private boolean arquivado;
+
     @Column(name = "matricula")
     private String matricula;
     @Enumerated(EnumType.STRING)

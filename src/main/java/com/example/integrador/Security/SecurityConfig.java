@@ -127,6 +127,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                         .requestMatchers("/auth/me").authenticated()
                         .requestMatchers("/usuarios/**").hasRole("ADMIN")
+                        .requestMatchers("/aluno/**").hasRole("ADMIN")
+                        .requestMatchers("/integracoes/email/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/dashboard/aluno").hasRole("ALUNO")
                         .requestMatchers(HttpMethod.GET, "/dashboard/motorista").hasRole("MOTORISTA")
                         .requestMatchers("/dashboard/**").hasRole("ADMIN")

@@ -18,4 +18,7 @@ public interface ContaReceberRepository extends JpaRepository<ContaReceber, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select conta from ContaReceber conta where conta.id = :id")
     Optional<ContaReceber> findLockedById(Long id);
+
+    @Query("select c.aluno.id from ContaReceber c where c.id = :id")
+    Optional<Long> findAlunoIdById(Long id);
 }

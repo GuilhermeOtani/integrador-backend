@@ -45,6 +45,12 @@ public class DashboardConsultasRepository {
                 """, ViagemDashboardBase.class).setParameter("faculdade", faculdadeId).getResultList();
     }
 
+    public List<ViagemDashboardBase> viagensDoDia(DiaSemana dia) {
+        if (dia == null) return List.of();
+        return em.createQuery(VIAGEM + "where g.diaSemana = :dia order by v.id", ViagemDashboardBase.class)
+                .setParameter("dia", dia).getResultList();
+    }
+
     public List<ViagemDashboardBase> viagensMotorista(Long pessoaId) {
         return em.createQuery(VIAGEM + "where m.id = :pessoa order by v.id", ViagemDashboardBase.class)
                 .setParameter("pessoa", pessoaId).getResultList();
@@ -121,7 +127,7 @@ public class DashboardConsultasRepository {
     }
 
     public List<Object[]> alunosPorStatus() {
-        return em.createQuery("select a.statusMatricula, count(a) from Aluno a group by a.statusMatricula", Object[].class).getResultList();
+        return em.createQuery("select a.statusMatricula, count(a) from Aluno a where a.arquivado = false group by a.statusMatricula", Object[].class).getResultList();
     }
 
     public List<Object[]> onibusPorStatus() {

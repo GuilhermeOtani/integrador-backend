@@ -29,13 +29,15 @@ public class UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final PessoaRepository pessoaRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PessoaBloqueioService bloqueios;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
                           PessoaRepository pessoaRepository,
-                          PasswordEncoder passwordEncoder) {
+                          PasswordEncoder passwordEncoder, PessoaBloqueioService bloqueios) {
         this.usuarioRepository = usuarioRepository;
         this.pessoaRepository = pessoaRepository;
         this.passwordEncoder = passwordEncoder;
+        this.bloqueios = bloqueios;
     }
 
     @Transactional(readOnly = true)
@@ -49,6 +51,7 @@ public class UsuarioService {
     public List<PessoaDisponivelResponse> listarPessoasSemUsuario() {
         return pessoaRepository.findAllByOrderByNomeAsc().stream()
                 .filter(pessoa -> pessoa instanceof Aluno || pessoa instanceof Motorista)
+                .filter(pessoa -> !(pessoa instanceof Aluno aluno) || !aluno.isArquivado())
                 .filter(pessoa -> !usuarioRepository.existsByPessoaId(pessoa.getId()))
                 .map(pessoa -> new PessoaDisponivelResponse(
                         pessoa.getId(), pessoa.getNome(), papelDaPessoa(pessoa)))
@@ -57,9 +60,8 @@ public class UsuarioService {
 
     @Transactional
     public UsuarioResponse criarUsuario(CriarUsuarioRequest request) {
-        Pessoa pessoa = pessoaRepository.findById(request.pessoaId())
-                .orElseThrow(() -> new RecursoNaoEncontradoException(
-                        "Pessoa de ID " + request.pessoaId() + " não encontrada"));
+        Pessoa pessoa = bloqueios.bloquearPessoa(request.pessoaId());
+        bloqueios.exigirNaoArquivado(pessoa);
 
         if (!(pessoa instanceof Aluno) && !(pessoa instanceof Motorista)) {
             throw new RegraNegocioException("Somente alunos e motoristas podem receber uma conta por este endpoint");
@@ -108,7 +110,7 @@ public class UsuarioService {
 
     @Transactional
     public UsuarioResponse atualizarEmail(Long id, AtualizarEmailUsuarioRequest request) {
-        Usuario usuario = buscarEntidadePorId(id);
+        Usuario usuario = bloqueios.bloquearUsuario(id);
         String emailNormalizado = normalizarEmail(request.email());
         if (usuario.getEmail().equals(emailNormalizado)) {
             return UsuarioResponse.fromEntity(usuario);
@@ -124,7 +126,7 @@ public class UsuarioService {
 
     @Transactional
     public void redefinirSenha(Long id, RedefinirSenhaUsuarioRequest request) {
-        Usuario usuario = buscarEntidadePorId(id);
+        Usuario usuario = bloqueios.bloquearUsuario(id);
         usuario.setSenha(passwordEncoder.encode(request.senha()));
         revogarTokens(usuario);
         usuarioRepository.save(usuario);
@@ -133,8 +135,9 @@ public class UsuarioService {
     @Transactional
     public UsuarioResponse atualizarStatus(Long id, AtualizarStatusUsuarioRequest request,
                                            Long usuarioAutenticadoId) {
-        Usuario usuario = buscarEntidadePorId(id);
+        Usuario usuario = bloqueios.bloquearUsuario(id);
         boolean novoStatus = request.ativo();
+        if (novoStatus) bloqueios.exigirNaoArquivado(usuario.getPessoa());
         if (usuario.isAtivo() == novoStatus) {
             return UsuarioResponse.fromEntity(usuario);
         }
@@ -151,7 +154,7 @@ public class UsuarioService {
 
     @Transactional
     public void excluirAcesso(Long id, Long usuarioAutenticadoId) {
-        Usuario usuario = buscarEntidadePorId(id);
+        Usuario usuario = bloqueios.bloquearUsuario(id);
         impedirAcaoSobrePropriaConta(id, usuarioAutenticadoId, "excluir");
         impedirRemocaoUltimoAdminAtivo(usuario);
         usuarioRepository.delete(usuario);

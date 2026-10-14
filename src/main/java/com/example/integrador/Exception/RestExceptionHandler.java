@@ -17,6 +17,19 @@ import java.util.Map;
 @RestControllerAdvice
 public class RestExceptionHandler {
 
+    @ExceptionHandler(ExclusaoAlunoBloqueadaException.class)
+    public ProblemDetail exclusaoAluno(ExclusaoAlunoBloqueadaException exception) {
+        ProblemDetail problema = problema(HttpStatus.CONFLICT, "Exclusão bloqueada", exception.getMessage());
+        problema.setProperty("codigo", exception.getCodigo());
+        if (exception.getVinculos() != null) problema.setProperty("vinculos", exception.getVinculos());
+        return problema;
+    }
+
+    @ExceptionHandler(IntegracaoEmailIndisponivelException.class)
+    public ProblemDetail emailIndisponivel(IntegracaoEmailIndisponivelException exception) {
+        return problema(HttpStatus.SERVICE_UNAVAILABLE, "E-mail indisponível", exception.getMessage());
+    }
+
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
     public ProblemDetail formatoInvalido(Exception exception) {
         return problema(HttpStatus.BAD_REQUEST, "Requisição inválida", "JSON, identificador ou enum inválido");

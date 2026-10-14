@@ -12,18 +12,27 @@ import java.util.List;
 @Service
 public class PessoaService {
     private final PessoaRepository pessoaRepository;
-    private final ProtecaoHistoricoManutencaoService protecaoHistorico;
+    private final PessoaBloqueioService bloqueios;
+    private final AlunoService alunoService;
+    private final PessoaExclusaoTransacionalService exclusao;
 
-    public PessoaService(PessoaRepository pessoaRepository, ProtecaoHistoricoManutencaoService protecaoHistorico) {
+    public PessoaService(PessoaRepository pessoaRepository,
+                         PessoaBloqueioService bloqueios, AlunoService alunoService,
+                         PessoaExclusaoTransacionalService exclusao) {
         this.pessoaRepository = pessoaRepository;
-        this.protecaoHistorico = protecaoHistorico;
+        this.bloqueios = bloqueios;
+        this.alunoService = alunoService;
+        this.exclusao = exclusao;
     }
 
     public List<Pessoa> listarTodosPessoa() {
         return pessoaRepository.findAll();
     }
 
+    @Transactional
     public Pessoa salvarPessoa(Pessoa pessoa) {
+        if (pessoa.getId() != null) return atualizarPessoa(pessoa.getId(), pessoa);
+        if (pessoa instanceof com.example.integrador.Model.Aluno aluno) aluno.setArquivado(false);
         return pessoaRepository.save(pessoa);
     }
 
@@ -32,16 +41,18 @@ public class PessoaService {
                 .findById(id).orElseThrow(() -> new RuntimeException("Pessoa de ID " + id + " não encontrado"));
     }
 
-    @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void deletarPessoaPorId(Long id) {
-        protecaoHistorico.verificarPessoa(id);
-        pessoaRepository.deleteById(id);
+        Pessoa pessoa = pessoaRepository.findById(id)
+                .orElseThrow(() -> new com.example.integrador.Exception.RecursoNaoEncontradoException("Pessoa não encontrada."));
+        if (pessoa instanceof com.example.integrador.Model.Aluno) alunoService.deletarAlunoPorId(id);
+        else exclusao.excluirNaoAluno(id);
     }
 
+    @Transactional
     public Pessoa atualizarPessoa(Long id, Pessoa pessoa) {
-        Pessoa pessoaSalvo = buscarPessoaPorId(id);
-        BeanUtils.copyProperties(pessoa, pessoaSalvo, "id");
+        Pessoa pessoaSalvo = bloqueios.bloquearPessoa(id);
+        BeanUtils.copyProperties(pessoa, pessoaSalvo, "id", "arquivado");
         return pessoaRepository.save(pessoaSalvo);
     }
 

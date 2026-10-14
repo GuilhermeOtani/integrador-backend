@@ -118,7 +118,7 @@ public class ViagemService {
             long totalAlunosPrevistos = 0;
 
             for (Faculdade faculdade : viagem.getFaculdades()) {
-                totalAlunosPrevistos += alunoRepository.countByFaculdadeIdAndStatusMatricula(faculdade.getId(), StatusMatricula.ATIV0);
+                totalAlunosPrevistos += alunoRepository.countByFaculdadeIdAndStatusMatriculaAndArquivadoFalse(faculdade.getId(), StatusMatricula.ATIV0);
             }
 
             if (totalAlunosPrevistos > capacidadeMax) {
