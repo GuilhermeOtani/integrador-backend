@@ -415,6 +415,8 @@ Exceções legadas `RuntimeException` nesse controller são convertidas em `400 
 
 POST e PUT recebem `ContaPagar`.
 
+O vínculo `motorista`/`pessoa_id` continua opcional: despesas gerais sem pessoa podem ser criadas e editadas. Quando informado, exige ID de pessoa existente e não permite criar ou transferir uma conta para aluno arquivado. Contas históricas do arquivado podem ser editadas mantendo a mesma pessoa. A proteção de arquivamento não torna esse vínculo obrigatório. O pagamento dessas despesas é permitido; seu recibo retorna `nomeMotorista=null`, sem falhar por ausência de pessoa.
+
 ### 7.10 Pagamentos e recibos
 
 | Método | Caminho | Parâmetros | Resultado |
@@ -844,6 +846,16 @@ Para evitar recarga do backend aberto no IDE, foi usado um POM auxiliar ignorado
 ```
 
 Relatórios e JAR desta validação estão em `target/verificacao-services/build`; `target/classes` não foi recompilado por esse comando. Nenhuma migration nova foi criada. O frontend, o guia recebido e o diagrama permaneceram intactos; as alterações anteriores de e-mail foram preservadas, sem commit/push. Para executar a refatoração no IDE, parar o backend antes de um build limpo e reiniciá-lo depois.
+
+### Revisão pré-PR da integração por e-mail e arquivamento em 14/10/2026
+
+A comparação com `origin/main` confirmou que a base já é ancestral de `codex/integracao-email`, sem conflitos de merge. A revisão preservou integralmente arquivamento/restauração, revogação de tokens, filtros, histórico financeiro e exclusão protegida; as migrations existentes e o diagrama não foram alterados.
+
+Foi corrigida uma regressão no CRUD de contas a pagar: a pessoa vinculada continua opcional, conforme o modelo e schema anteriores. Despesas sem pessoa podem ser criadas, editadas e pagas; o recibo trata o nome ausente sem erro. Continua proibido criar ou transferir vínculo financeiro para aluno arquivado, com edição do histórico mantendo a mesma pessoa permitida. Foi removida a projeção não utilizada que confundia conta inexistente com conta sem pessoa.
+
+Quatro novos cenários de regressão são executados tanto no H2 quanto no PostgreSQL: CRUD/pagamento/recibo de despesa sem pessoa; bloqueio de novo vínculo com arquivado e manutenção do histórico; atribuição/remoção do vínculo opcional e validação; salário do motorista com recorrência de 30 dias, pagamento, recibo e proteção contra pagamento repetido.
+
+Comando de validação: `mvn -f target/verificacao-services/pom.xml package`, usando JDK 21.0.8 e as quatro famílias de variáveis PostgreSQL de teste. Resultado: **202 testes, zero falhas, zero erros, zero ignorados; BUILD SUCCESS**. Foram executados 38 testes de arquivamento/regressão financeira em cada banco, dois testes de migration de arquivamento e 124 testes restantes de autenticação, manutenção, dashboard, mensalidade e e-mail. Saída isolada em `target/verificacao-services/build`, schemas PostgreSQL temporários e gateways simulados; sem SMTP real nem arquivamento/exclusão de cadastros reais. Homologação manual do frontend e SMTP real permanece pendente.
 
 ### Pontos de atenção
 

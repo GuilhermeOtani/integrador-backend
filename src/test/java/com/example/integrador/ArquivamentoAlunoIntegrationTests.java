@@ -55,6 +55,7 @@ class ArquivamentoAlunoIntegrationTests {
     @Autowired ContaReceberService cobrancas;
     @Autowired ContaPagarService contasPagar;
     @Autowired RecebimentoService recebimentos;
+    @Autowired PagamentoService pagamentos;
     @Autowired RotinaFinanceiraService rotina;
     @Autowired PessoaBloqueioService bloqueios;
     @Autowired DashboardService dashboard;
@@ -308,6 +309,86 @@ class ArquivamentoAlunoIntegrationTests {
         ContaPagar cp = new ContaPagar(); cp.setMotorista(aluno);
         assertThatThrownBy(() -> contasPagar.salvarContaPagar(cp)).isInstanceOf(ConflitoException.class);
         assertThat(contar("ContaReceber")).isZero();
+    }
+
+    @Test void contasPagarSemPessoaContinuamPodendoSerCriadasEEditadas() throws Exception {
+        mvc.perform(post("/contapagar/salvar-contapagar").header("Authorization", adminToken)
+                .contentType("application/json").content("""
+                    {"descricao":"Combustível","valor":150,"status":"PENDENTE","dataVencimento":"2026-10-20"}
+                    """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.motorista").value(org.hamcrest.Matchers.nullValue()));
+        Long id = tx.execute(s -> em.createQuery("select c.id from ContaPagar c", Long.class).getSingleResult());
+        mvc.perform(put("/contapagar/atualizar-contapagar/" + id).header("Authorization", adminToken)
+                .contentType("application/json").content("""
+                    {"descricao":"Combustível atualizado","valor":175,"status":"PENDENTE","dataVencimento":"2026-10-21"}
+                    """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.valor").value(175))
+                .andExpect(jsonPath("$.motorista").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(post("/contapagar/salvar-contapagar").header("Authorization", adminToken)
+                .contentType("application/json").content("""
+                    {"id":%d,"descricao":"Despesa editada via salvar","valor":180,"status":"PENDENTE"}
+                    """.formatted(id)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id));
+        assertThat(contar("ContaPagar")).isEqualTo(1);
+        assertThat(pagamentos.realizarPagamento(id, FormaPagamento.PIX, null).getValor()).isEqualByComparingTo("180");
+        mvc.perform(get("/pagamentos/recibo/conta/" + id).header("Authorization", adminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.nomeMotorista").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test void contasPagarSemPessoaNaoPodemSerVinculadasAAlunoArquivadoMasHistoricoEhEditavel() {
+        ContaPagar semPessoa = new ContaPagar(); semPessoa.setDescricao("Despesa geral");
+        Long semPessoaId = contasPagar.salvarContaPagar(semPessoa).getId();
+        ContaPagar historica = new ContaPagar(); historica.setMotorista(aluno); historica.setDescricao("Histórico");
+        Long historicoId = contasPagar.salvarContaPagar(historica).getId();
+        alunos.arquivarAluno(aluno.getId(), true);
+        ContaPagar entrada = new ContaPagar(); entrada.setMotorista(aluno); entrada.setDescricao("Histórico atualizado");
+        assertThatThrownBy(() -> contasPagar.atualizarContaPagar(semPessoaId, entrada)).isInstanceOf(ConflitoException.class);
+        contasPagar.atualizarContaPagar(historicoId, entrada);
+        tx.executeWithoutResult(s -> {
+            assertThat(em.find(ContaPagar.class, semPessoaId).getMotorista()).isNull();
+            assertThat(em.find(ContaPagar.class, historicoId).getMotorista().getId()).isEqualTo(aluno.getId());
+            assertThat(em.find(ContaPagar.class, historicoId).getDescricao()).isEqualTo("Histórico atualizado");
+        });
+    }
+
+    @Test void contasPagarContinuamPermitindoVincularPessoaERemoverVinculo() {
+        ContaPagar conta = new ContaPagar(); conta.setDescricao("Despesa");
+        Long id = contasPagar.salvarContaPagar(conta).getId();
+        ContaPagar entrada = new ContaPagar(); entrada.setMotorista(motorista); entrada.setDescricao("Vinculada");
+        contasPagar.atualizarContaPagar(id, entrada);
+        tx.executeWithoutResult(s -> assertThat(em.find(ContaPagar.class, id).getMotorista().getId()).isEqualTo(motorista.getId()));
+        entrada.setMotorista(null);
+        contasPagar.atualizarContaPagar(id, entrada);
+        tx.executeWithoutResult(s -> assertThat(em.find(ContaPagar.class, id).getMotorista()).isNull());
+        ContaPagar invalida = new ContaPagar(); invalida.setMotorista(new Pessoa());
+        assertThatThrownBy(() -> contasPagar.salvarContaPagar(invalida)).isInstanceOf(RegraNegocioException.class);
+        assertThatThrownBy(() -> contasPagar.atualizarContaPagar(Long.MAX_VALUE, entrada)).isInstanceOf(RecursoNaoEncontradoException.class);
+    }
+
+    @Test void salarioDoMotoristaMantemRecorrenciaPagamentoEReciboAposArquivarAluno() {
+        LocalDate vencimento = LocalDate.now().minusDays(1);
+        BigDecimal salario = new BigDecimal("1500");
+        Long primeira = tx.execute(s -> {
+            Motorista cadastrado = em.find(Motorista.class, motorista.getId()); cadastrado.setSalario(salario);
+            contasPagar.gerarPrimeiraConta(cadastrado);
+            ContaPagar conta = em.createQuery("select c from ContaPagar c", ContaPagar.class).getSingleResult();
+            conta.setDataVencimento(vencimento);
+            return conta.getId();
+        });
+        alunos.arquivarAluno(aluno.getId(), true);
+        rotina.gerarContasRecorrentes();
+        rotina.gerarContasRecorrentes();
+        tx.executeWithoutResult(s -> {
+            var contas = em.createQuery("select c from ContaPagar c where c.motorista.id = :id order by c.dataVencimento", ContaPagar.class)
+                    .setParameter("id", motorista.getId()).getResultList();
+            assertThat(contas).hasSize(2).allSatisfy(c -> assertThat(c.getValor()).isEqualByComparingTo(salario));
+            assertThat(contas.getLast().getDataVencimento()).isEqualTo(vencimento.plusDays(30));
+        });
+        var pagamento = pagamentos.realizarPagamento(primeira, FormaPagamento.PIX, null);
+        assertThat(pagamento.getValor()).isEqualByComparingTo(salario);
+        assertThat(pagamentos.buscarReciboDTOPorConta(primeira)).isNotNull();
+        tx.executeWithoutResult(s -> assertThat(em.find(ContaPagar.class, primeira).getStatus()).isEqualTo(StatusFinanceiro.PAGO));
+        assertThatThrownBy(() -> pagamentos.realizarPagamento(primeira, FormaPagamento.PIX, null)).isInstanceOf(RuntimeException.class);
     }
 
     @Test void rotinaIgnoraArquivadoERestauracaoNaoReiniciaPeriodo() {

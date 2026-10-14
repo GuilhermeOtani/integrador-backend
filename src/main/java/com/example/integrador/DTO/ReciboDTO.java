@@ -19,7 +19,8 @@ public class ReciboDTO {
         dto.setValor(pagamento.getValor());
         dto.setDataPagamento(pagamento.getDataPagamento());
         dto.setFormaPagamento(pagamento.getFormaPagamento().toString());
-        dto.setNomeMotorista(pagamento.getContaPagar().getMotorista().getNome());
+        var pessoa = pagamento.getContaPagar().getMotorista();
+        dto.setNomeMotorista(pessoa == null ? null : pessoa.getNome());
         dto.setDescricaoConta(pagamento.getContaPagar().getDescricao());
         return dto;
     }
