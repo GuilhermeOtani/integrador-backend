@@ -2,7 +2,7 @@
 
 ## 1. Escopo desta documentação
 
-Este documento descreve o estado efetivamente implementado no backend em **8 de outubro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
+Este documento descreve o estado efetivamente implementado no backend em **10 de outubro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
 
 O projeto está em desenvolvimento. Por isso, o documento diferencia recursos expostos pela API REST, recursos apenas internos, regras de negócio implementadas e limitações presentes no código atual.
 
@@ -12,7 +12,7 @@ O projeto está em desenvolvimento. Por isso, o documento diferencia recursos ex
 
 O Projeto Integrador é um backend para gestão de transporte escolar/universitário. A aplicação usa **Java 21**, **Spring Boot 4.0.3**, Spring Web MVC, Spring Data JPA, Spring Security, PostgreSQL e Lombok.
 
-No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado e administração de contas de acesso.
+No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado, administração de contas de acesso e dashboards específicos de aluno, motorista e administrador.
 
 Pessoa continua sem controller próprio. Conta a receber e recebimento possuem endpoints específicos para a matrícula do aluno. Chamados de manutenção possuem abertura/consulta por aluno e motorista e atendimento administrativo.
 
@@ -36,12 +36,12 @@ Estrutura principal:
 
 ```text
 src/main/java/com/example/integrador/
-|-- Config/       configurações de CORS
+|-- Config/       CORS e relógio do dashboard
 |-- Controller/   endpoints REST
 |-- DTO/          objetos de entrada e resposta
 |-- Enum/         valores enumerados persistidos como texto
 |-- Model/        entidades JPA
-|-- Repository/   interfaces Spring Data JPA
+|-- Repository/   Spring Data JPA e consultas agregadas do dashboard
 |-- Security/     configuração do Spring Security
 |-- Service/      CRUD, conversões e regras de negócio
 `-- IntegradorApplication.java
@@ -471,7 +471,37 @@ Não há edição do relato/ônibus/autor, cancelamento, exclusão, anexos, chat
 
 Guia específico: `GUIA_MANUTENCAO_ONIBUS_FRONTEND.md`, com exemplos Angular standalone/PrimeNG; o código do frontend não foi modificado nesta entrega.
 
-### 7.16 Recursos sem endpoint
+### 7.16 Dashboards por nível de acesso
+
+| Método | Caminho | Acesso exclusivo | Conteúdo |
+|---|---|---|---|
+| GET | `/dashboard/aluno` | ALUNO | perfil resumido, faculdade, transporte e cobranças próprias |
+| GET | `/dashboard/motorista` | MOTORISTA | viagens atribuídas à pessoa autenticada e itinerários |
+| GET | `/dashboard/admin?mes=2026-10` | ADMIN | movimentações mensais, contas abertas e indicadores operacionais |
+
+São consultas com DTOs próprios, `@PreAuthorize` nos serviços e transação somente de leitura. A identidade de aluno/motorista é obtida por `Usuario` identificado pelo `sub` do JWT validado. Não há parâmetro de pessoa, faculdade ou motorista para escolher outro perfil. ADMIN não acessa os endpoints exclusivos dos demais papéis.
+
+Todas as respostas incluem `dataReferencia` e `geradoEm`, derivados de um `Clock` injetável em `America/Sao_Paulo`. `mes` omitido significa o mês atual; deve ser `yyyy-MM`, com ano entre 0001 e 9999. Mês inválido retorna `400 ProblemDetail`; ausência/token inválido retorna `401`, papel incorreto `403`.
+
+**Transporte:** `viagensHoje`, `agendaSemanal`, `programacaoSemGrade` e `rotas`. A agenda cobre hoje e os seis dias seguintes e calcula cada ocorrência somente pelo dia da grade, ordenando por ocorrência e ID. Todas as viagens de hoje são destacadas. `Viagem.data` não é consultada para o dashboard, não é alterada e continua nos contratos antigos. Grade ausente ou sem dia deixa a ocorrência nula, com aviso “Programação não definida”. Não há horários ou escolha de “próxima saída”.
+
+Os resumos incluem grade, rota/descrição/pontos, ônibus (ID, número, placa, modelo, capacidade, estado), motorista (ID da pessoa/nome), destinos explícitos e avisos. Não incluem CPF, CNH, salário, outros alunos ou foto do ônibus. Ônibus não OPERANDO ou sem estado permanece visível com alerta e `onibusDisponivel=false`, sem cancelamento automático. Pontos reúnem os dois vínculos do modelo, deduplicam por ID e ordenam por ordemParada, com ordem ausente ao final.
+
+**Aluno:** seleciona viagens cuja coleção `Viagem.faculdades` contém a faculdade do cadastro, não apenas a faculdade principal da rota. Mostra rotas cadastradas para a faculdade e rotas usadas por essas viagens, inclusive rotas sem viagem. Não representa vínculo individual aluno–ônibus/ponto. Faculdade ou transporte ausente retorna `200`, arrays vazios e avisos.
+
+`financeiro` separa `mensalidadeCadastro` do valor de `cobrancaPrincipal`. A principal é a aberta vencida mais antiga; na ausência, a aberta com vencimento mais próximo; se todas pagas, a paga de vencimento mais recente (ID desempata). Retorna valor, vencimento, status persistido, situação calculada e dias para vencer, além de quantidade/valor em aberto e vencido. Situações: `PAGO`, `VENCIDA`, `VENCE_HOJE`, `A_VENCER`, `SEM_VENCIMENTO`. O contador é negativo para vencidas, zero hoje e nulo para pagas/sem data. Pagas nunca são vencidas. Sem conta, a principal é nula: nenhum prazo é inventado.
+
+**Motorista:** somente viagens cujo motorista seja a pessoa autenticada. Usa os mesmos resumos e agenda, sem ampliar acesso a cadastros ou financeiro.
+
+**ADMIN:** `financeiro` contém recebido/pago no mês pelas datas e valores efetivos de `Recebimento`/`Pagamento`, saldo dessas movimentações e série de seis meses encerrando no selecionado, incluindo meses zerados. Saldo pode ser negativo e não representa lucro ou saldo bancário. As agregações financeiras não juntam relacionamentos que multiplicariam valores; usam `BigDecimal`.
+
+Contas abertas a receber/pagar, vencidas e vencendo em sete dias são posição atual de **todos os períodos**, não filtrada pelo mês selecionado. A janela de vencimentos inclui hoje até hoje+6. Vencido significa não PAGO e vencimento anterior à referência; status legado nulo é tratado como aberto, sem vencimento não é contado como vencido. Cinco contas abertas mais antigas de cada tipo são retornadas, ordenadas por vencimento e ID; sem vencimento ficam ao final.
+
+`operacao` traz alunos por matrícula, ônibus por estado (incluindo não informado), viagens de hoje, viagens sem programação, chamados abertos/em andamento e prioridade ALTA pendente, além dos cinco chamados pendentes ordenados por urgência e antiguidade. Ausência de dados retorna totais zero e listas vazias.
+
+Não são necessárias novas tabelas/migrations. Guia específico: `GUIA_DASHBOARD_FRONTEND.md`, adaptado ao Angular standalone/PrimeNG atual, com contratos, navegação, layouts, pagamento compartilhado e testes sugeridos. O frontend não foi modificado nesta entrega.
+
+### 7.17 Recursos sem endpoint
 
 Não há controller para `Pessoa`. Conta a receber, recebimento e chamado de manutenção expõem somente os contratos específicos descritos acima, sem CRUD genérico completo.
 
@@ -525,6 +555,12 @@ Somente um ônibus `OPERANDO` pode ser atribuído a uma nova viagem ou substitui
 
 Abrir, resolver ou reabrir um chamado nunca altera automaticamente o ônibus ou cancela viagens. ADMIN escolhe manualmente o estado do ônibus durante o atendimento ou no cadastro. Resolver exige observação, inclusive para chamados duplicados/improcedentes. Pessoa/ônibus com qualquer chamado, inclusive resolvido, tem exclusão física bloqueada com `409`; excluir somente as credenciais continua permitido pelas regras de administração de usuários.
 
+### 8.8 Agenda semanal e consultas sem efeitos colaterais
+
+O dashboard ignora a data legada da viagem e calcula a próxima ocorrência do dia da grade dentro de uma janela de sete dias. Viagem de segunda aparece na segunda pertinente à janela mesmo quando sua data legada é antiga, futura ou nula. Viagem sem grade/dia nunca ganha programação pela data antiga. Os dias atualmente aceitos vão de segunda a sexta; não existem horários, rastreamento ou reservas individuais.
+
+Consultar um dashboard não executa a rotina financeira, não cria conta, não muda matrícula e não atualiza estado financeiro por atraso. O vencimento da cobrança não expira matrícula ou acesso. Pagamento continua usando o fluxo já existente de recebimentos; o frontend deve consultar novamente o painel depois de pagar para obter a nova cobrança principal, totais e perfil.
+
 ---
 
 ## 9. Enumerações aceitas
@@ -562,6 +598,9 @@ Permissões efetivas:
 |---|---:|---:|---:|---:|
 | `POST /auth/login` e `OPTIONS` | sim | sim | sim | sim |
 | `GET /auth/me` | não | sim | sim | sim |
+| `GET /dashboard/admin` | não | sim | não | não |
+| `GET /dashboard/motorista` | não | não | sim | não |
+| `GET /dashboard/aluno` | não | não | não | sim |
 | `/usuarios/**` | não | sim | não | não |
 | POST `/chamados-manutencao` e GET `/chamados-manutencao/minhas` | não | não | sim | sim |
 | GET `/chamados-manutencao/onibus` | não | sim | sim | sim |
@@ -654,7 +693,11 @@ Os testes usam H2 em modo PostgreSQL, Flyway desabilitado e `ddl-auto=create-dro
 
 Os testes de manutenção cobrem autoria automática e campos protegidos, permissões, isolamento, filtros, criação por aluno/motorista, tratamento de dados inválidos, atendimento, reabertura, independência entre estados, preservação dos dados do ônibus, histórico após excluir acesso, bloqueio de exclusão física e disponibilidade nas viagens/grades.
 
+`DashboardIntegrationTests` usa relógio controlado para testar permissões HTTP e nos serviços, isolamento por faculdade/motorista, múltiplos destinos, rotas sem viagens, deduplicação dos pontos, dados incompletos, privacidade das respostas, agenda semanal/virada de semana/fuso, datas legadas ignoradas, programação indefinida e alertas de indisponibilidade. Também cobre prioridade das cobranças, situações/dias/totais, atualização após pagamento, períodos e agregações financeiras sem duplicação, saldo negativo, indicadores, cinco pendências, ausência de dados e preservação de registros após consultas.
+
 `ManutencaoPostgresMigrationTests` é opcional, habilitado por `MANUTENCAO_TEST_DB_URL`, com usuário/senha externos em `MANUTENCAO_TEST_DB_USER` e `MANUTENCAO_TEST_DB_PASSWORD`. Valida V1–V5 em schema vazio, atualização V4→V5 com registros preservados, FKs/obrigatoriedade/limites e falha segura para chamado incompleto. Cria e remove somente schemas temporários próprios `test_manutencao_*`, sem alterar o schema público.
+
+`DashboardPostgresIntegrationTests` repete os 15 testes do dashboard contra PostgreSQL real quando `DASHBOARD_TEST_DB_URL`, `DASHBOARD_TEST_DB_USER` e `DASHBOARD_TEST_DB_PASSWORD` são informados ao processo Maven. Aplica V1–V5 e valida o schema em um schema temporário próprio `test_dashboard_*`, removido ao final. Sem essas variáveis, essa suíte é ignorada; os 15 testes H2 continuam executando. Não usa nem modifica as tabelas públicas do sistema.
 
 O `RestExceptionHandler` padroniza as falhas de autenticação, validação, formato inválido, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` mantêm handlers locais legados para `RuntimeException`, mas possuem handlers específicos `409/404` para atribuição de ônibus. Recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
 
@@ -679,12 +722,15 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, for
 15. Alguns endpoints antigos retornam entidades JPA e usam tratamento de erro não padronizado.
 16. Manutenção não possui chat, anexos, notificações, oficina, cobrança ou histórico de alterações da observação; a última gravação administrativa prevalece.
 17. Ônibus indisponível não recebe novas atribuições, mas viagens existentes não são canceladas/remanejadas automaticamente.
+18. Datas legadas de viagem continuam nos contratos antigos por compatibilidade; somente a grade/dia determina a agenda do dashboard.
+19. O dashboard mostra transporte da faculdade, não uma atribuição individual de ônibus ou ponto ao aluno; não há horários ou rastreamento.
+20. Dashboards de transporte retornam todas as atribuições pertinentes, sem paginação de servidor; bases grandes podem exigir paginação futura.
 
 ---
 
 ## 14. Estado da revisão
 
-- **Última revisão:** 8 de outubro de 2026
+- **Última revisão:** 10 de outubro de 2026
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
 - **Status:** em desenvolvimento
 - **Fonte:** implementação atual do repositório
