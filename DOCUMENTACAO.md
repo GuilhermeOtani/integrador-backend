@@ -2,7 +2,7 @@
 
 ## 1. Escopo desta documentação
 
-Este documento descreve o estado efetivamente implementado no backend em **10 de outubro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
+Este documento descreve o estado efetivamente implementado no backend em **14 de outubro de 2026**, na branch `codex/integracao-email`. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
 
 O projeto está em desenvolvimento. Por isso, o documento diferencia recursos expostos pela API REST, recursos apenas internos, regras de negócio implementadas e limitações presentes no código atual.
 
@@ -12,7 +12,7 @@ O projeto está em desenvolvimento. Por isso, o documento diferencia recursos ex
 
 O Projeto Integrador é um backend para gestão de transporte escolar/universitário. A aplicação usa **Java 21**, **Spring Boot 4.0.3**, Spring Web MVC, Spring Data JPA, Spring Security, PostgreSQL e Lombok.
 
-No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado, administração de contas de acesso e dashboards específicos de aluno, motorista e administrador.
+No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado, administração de contas de acesso, dashboards específicos, envio da programação geral por e-mail e arquivamento/restauração de alunos com exclusão protegida.
 
 Pessoa continua sem controller próprio. Conta a receber e recebimento possuem endpoints específicos para a matrícula do aluno. Chamados de manutenção possuem abertura/consulta por aluno e motorista e atendimento administrativo.
 
@@ -39,6 +39,7 @@ src/main/java/com/example/integrador/
 |-- Config/       CORS e relógio do dashboard
 |-- Controller/   endpoints REST
 |-- DTO/          objetos de entrada e resposta
+|-- Email/        programação geral, mensagem HTML/texto, SMTP, fila e administração
 |-- Enum/         valores enumerados persistidos como texto
 |-- Model/        entidades JPA
 |-- Repository/   Spring Data JPA e consultas agregadas do dashboard
@@ -60,7 +61,8 @@ src/main/java/com/example/integrador/
 | Persistência | Spring Data JPA e Hibernate |
 | API web | Spring Web MVC |
 | Segurança | Spring Security 7, JWT HS256 stateless, BCrypt e RBAC |
-| Migrações | Flyway V1–V5, incluindo JWT, administração segura, matrícula financeira e manutenção |
+| Migrações | Flyway V1–V8; V6 legada preservada, V7 para e-mail e V8 para arquivamento |
+| E-mail | Spring Mail, SMTP com TLS, texto/HTML UTF-8 e fila persistente; sem anexos |
 | Validação | Jakarta Bean Validation nos contratos de autenticação, usuários, matrícula e manutenção |
 | Banco | PostgreSQL |
 | Redução de boilerplate | Lombok |
@@ -110,9 +112,12 @@ Estende `Pessoa` e acrescenta:
 - `statusMatricula`: `StatusMatricula`;
 - `dataCadastro`: `LocalDate`;
 - `mensalidade`: `BigDecimal`;
+- `arquivado`: `boolean`, inicialmente false, na tabela compartilhada `pessoa`;
 - `faculdade`: relação N:1 com `Faculdade`.
 
 No código atual, `Aluno` **não possui relação com `Rota` nem com `Viagem`**.
+
+Arquivamento é independente de matrícula: preserva status, mensalidade, faculdade e histórico. Somente o PATCH dedicado modifica `arquivado`; atualizações comuns não arquivam/restauram. A coluna tem default false e NOT NULL para todos os subtipos, também em H2.
 
 ### 5.3 Motorista
 
@@ -246,6 +251,16 @@ Possui controller, DTOs, repository e serviço com autorização. Não expõe CR
 
 ---
 
+### 5.16 Persistência de e-mail
+
+- `EmailConfiguracao` / `email_configuracao`: registro único id 1, automático inicialmente false e última reserva global da fila.
+- `EmailLote` / `email_lote`: UUID idempotente, data, origem manual/automática, dia automático único, solicitante histórico, motivo de correção, quantidade ignorada e assunto/texto/HTML congelados.
+- `EmailEntrega` / `email_entrega`: uma mensagem por destinatário, ID histórico do usuário, endereço normalizado, data/revisão, estado, tentativas, reserva, próxima tentativa, aceite SMTP e erro seguro.
+
+Unicidade por data/endereço/revisão impede duplicidade. IDs históricos de usuário não possuem FK: excluir o acesso não apaga entregas e não impede a operação já existente. A relação entrega–lote possui FK.
+
+As quatro tabelas `whatsapp_*` criadas pela V6 permanecem apenas por compatibilidade com o banco que já aplicou a migration; não possuem entidades, controllers ou rotinas nesta branch. Não há funcionalidade de WhatsApp ativa.
+
 ## 6. DTOs e contratos específicos
 
 ### AlunoDTO
@@ -282,17 +297,27 @@ Contém `id`, `valor`, `dataPagamento`, `formaPagamento`, `nomeMotorista` e `des
 
 URL base local esperada: `http://localhost:8080`.
 
-Salvo onde indicado, os controllers não definem códigos HTTP específicos: criações e atualizações normalmente respondem `200 OK`, e exclusões respondem `200 OK` sem corpo.
+Salvo onde indicado, os controllers legados não definem códigos HTTP específicos: criações e atualizações normalmente respondem `200 OK`, e exclusões respondem `200 OK` sem corpo. Exclusão protegida de aluno retorna explicitamente `204 No Content`.
 
 ### 7.1 Alunos
 
 | Método | Caminho | Entrada | Saída |
 |---|---|---|---|
-| GET | `/aluno/listar` | — | lista de `Aluno` |
+| GET | `/aluno/listar?situacao=NAO_ARQUIVADOS` | filtro opcional | lista de `Aluno` com `arquivado` |
 | GET | `/aluno/buscar-aluno/{id}` | id | `Aluno` |
 | POST | `/aluno/salvar-aluno` | `AlunoDTO` | `Aluno` |
 | PUT | `/aluno/atualizar-aluno/{id}` | `AlunoDTO` | `Aluno` |
-| DELETE | `/aluno/deletar-aluno/{id}` | id | sem corpo |
+| PATCH | `/aluno/{id}/arquivamento` | `{"arquivado":true/false}` | aluno atualizado, 200 |
+| GET | `/aluno/{id}/situacao-exclusao` | id | acesso, vínculos e impedimentos |
+| DELETE | `/aluno/deletar-aluno/{id}` | id | 204, somente arquivado sem vínculos |
+
+Todos exigem ADMIN nas URLs e nos serviços. Listagem aceita `NAO_ARQUIVADOS` (padrão), `ARQUIVADOS` e `TODOS`; inválido retorna 400 e sem resultados retorna []. Consulta individual permite visualizar arquivados.
+
+PATCH exige booleano JSON real: campo ausente/nulo, string, número, lista ou campos extras retornam 400. Arquivar desativa acesso e revoga tokens; restaurar não reativa a conta nem gera cobrança. Repetições são idempotentes.
+
+Situação de exclusão: `alunoId`, `arquivado`, `podeExcluir`, `possuiAcesso`, `vinculos` (`contasReceber`, `contasPagar`, `chamados`, `viagens`) e `impedimentos` com código/mensagem. Contar todos os estados pelas referências diretas, inclusive legados inconsistentes. Ordem: `ALUNO_NAO_ARQUIVADO`, `CONTAS_RECEBER`, `CONTAS_PAGAR`, `CHAMADOS`, `VIAGENS`.
+
+Usuário não impede exclusão; seu acesso é removido na mesma transação. Cobranças, inclusive nunca pagas, e chamados encerrados impedem. DELETE revalida e retorna 409 com ProblemDetail, título "Exclusão bloqueada", `codigo=ALUNO_NAO_ARQUIVADO` ou `ALUNO_POSSUI_VINCULOS`, e contagens quando conhecidas. FK concorrente/desconhecida faz rollback completo e retorna conflito seguro, sem SQL ou números inventados. Inexistente/já excluído retorna 404.
 
 ### 7.2 Motoristas
 
@@ -389,6 +414,8 @@ Exceções legadas `RuntimeException` nesse controller são convertidas em `400 
 | DELETE | `/contapagar/deletar-contapagar/{id}` |
 
 POST e PUT recebem `ContaPagar`.
+
+O vínculo `motorista`/`pessoa_id` continua opcional: despesas gerais sem pessoa podem ser criadas e editadas. Quando informado, exige ID de pessoa existente e não permite criar ou transferir uma conta para aluno arquivado. Contas históricas do arquivado podem ser editadas mantendo a mesma pessoa. A proteção de arquivamento não torna esse vínculo obrigatório. O pagamento dessas despesas é permitido; seu recibo retorna `nomeMotorista=null`, sem falhar por ausência de pessoa.
 
 ### 7.10 Pagamentos e recibos
 
@@ -501,7 +528,33 @@ Contas abertas a receber/pagar, vencidas e vencendo em sete dias são posição 
 
 Não são necessárias novas tabelas/migrations. Guia específico: `GUIA_DASHBOARD_FRONTEND.md`, adaptado ao Angular standalone/PrimeNG atual, com contratos, navegação, layouts, pagamento compartilhado e testes sugeridos. O frontend não foi modificado nesta entrega.
 
-### 7.17 Recursos sem endpoint
+### 7.17 Programação geral por e-mail
+
+Todos os endpoints exigem ADMIN, também nos serviços:
+
+| Método | Caminho | Resultado |
+|---|---|---|
+| GET | `/integracoes/email/configuracao` | habilitação, automático, modo de teste, disponibilidade, horário/fuso e impedimentos; sem segredos |
+| PUT | `/integracoes/email/configuracao` | recebe `{"automatico":true}`, valida configuração e devolve estado atualizado |
+| GET | `/integracoes/email/previa` | programação de hoje, contagem de elegíveis/ignorados, avisos e assunto/texto/HTML |
+| POST | `/integracoes/email/envios` | recebe UUID `requestId`, `reenviar` e motivo opcional; retorna `202` com lote/entregas |
+| GET | `/integracoes/email/envios?pagina=0&tamanho=20` | histórico paginado; tamanho entre 1 e 100 |
+| GET | `/integracoes/email/envios/{id}` | detalhe, entregas e mensagem congelada; inexistente retorna 404 |
+
+Primeiro envio: `{"requestId":"9bfc26ac-201a-43e6-b814-95c76ebcb661","reenviar":false}`.
+Correção: novo UUID, `reenviar=true` e motivo não vazio de até 500 caracteres. O mesmo UUID com os mesmos parâmetros retorna o lote existente; com outros parâmetros retorna 409.
+
+O cliente não escolhe data, destinatários, assunto ou corpo. O backend utiliza os e-mails de ALUNO/MOTORISTA com `Usuario.ativo=true`; para ALUNO também exige cadastro não arquivado, sem filtrar situação de matrícula ou faculdade. ADMIN e pessoas sem conta não recebem.
+
+Cada destinatário recebe a mesma programação geral, em mensagem separada e sem visualizar os demais e-mails. Conteúdo agrupado por faculdade destaca número de identificação do ônibus, motorista, rota, pontos e avisos. Destinos vêm de `Viagem.faculdades`; uma viagem com múltiplos destinos aparece nas respectivas seções. Não há PDF, fotos, CPF, CNH, salário, cobranças ou identificação individual de outros alunos.
+
+Prévia, configuração e histórico funcionam com integração desativada. Configuração insuficiente ao enviar/ativar automático retorna 503 com ProblemDetail; sem programação ou destinatários no manual retorna 409. A prévia considera elegibilidade de cadastro/modo de teste; duplicidade do dia é apurada na criação do lote.
+
+O histórico omite as entregas e o corpo para reduzir o retorno; o detalhe/POST incluem esses campos. `ACEITA_SMTP` não significa entrega ou leitura.
+
+Guia completo: `GUIA_EMAIL_FRONTEND.md`. O Angular não foi alterado nesta entrega.
+
+### 7.18 Recursos sem endpoint
 
 Não há controller para `Pessoa`. Conta a receber, recebimento e chamado de manutenção expõem somente os contratos específicos descritos acima, sem CRUD genérico completo.
 
@@ -535,13 +588,13 @@ O código também marca a conta como paga quando `valorPago` é inferior ao valo
 
 ### 8.4 Pagamento da matrícula
 
-Ao cadastrar um aluno, `AlunoService` define `dataCadastro` com a data atual, `statusMatricula=PENDENTE` e cria a primeira `ContaReceber` na mesma transação. A conta usa a mensalidade informada, descrição `Matrícula - <nome>`, vencimento em 30 dias e status `PENDENTE`. Ao editar um aluno antigo que ainda não possui cobrança, a primeira conta é criada automaticamente.
+Ao cadastrar um aluno, `AlunoService` define `dataCadastro` com a data atual, `statusMatricula=PENDENTE` e cria a primeira `ContaReceber` na mesma transação. A conta usa a mensalidade informada, descrição `Matrícula - <nome>`, vencimento em 30 dias e status `PENDENTE`. Ao editar um aluno antigo não arquivado sem cobrança, a primeira conta é criada automaticamente. Edição de arquivado não gera cobrança.
 
-O pagamento sempre usa o valor integral persistido na conta. Dentro de uma transação, o backend bloqueia a conta, valida que ela pertence ao `pessoaId` do JWT, impede pagamento duplicado, cria `Recebimento`, marca a conta como `PAGO` e define `statusMatricula=ATIV0`. A operação representa um registro financeiro interno; não existe integração com banco, PIX ou operadora de cartão.
+O pagamento sempre usa o valor integral persistido na conta. A leitura inicial identifica o proprietário e preserva 404 para cobrança alheia. Na mesma transação, bloqueia primeiro o aluno, rejeita arquivado, depois bloqueia/recarrega a conta e revalida propriedade e duplicidade. Cria `Recebimento`, marca `PAGO` e define `statusMatricula=ATIV0`. A operação representa um registro financeiro interno; não existe integração com banco, PIX ou operadora de cartão.
 
 ### 8.5 Validação de capacidade da viagem
 
-Ao criar ou atualizar uma viagem com ônibus e faculdades, o serviço soma todos os alunos de cada faculdade cujo status seja `ATIV0` e rejeita a operação quando o total excede `Onibus.capacidade`.
+Ao criar ou atualizar uma viagem com ônibus e faculdades, o serviço soma os alunos não arquivados de cada faculdade cujo status seja `ATIV0` e rejeita a operação quando o total excede `Onibus.capacidade`.
 
 A validação considera todos os alunos ativos das faculdades, não alunos individualmente vinculados à viagem.
 
@@ -562,6 +615,42 @@ O dashboard ignora a data legada da viagem e calcula a próxima ocorrência do d
 Consultar um dashboard não executa a rotina financeira, não cria conta, não muda matrícula e não atualiza estado financeiro por atraso. O vencimento da cobrança não expira matrícula ou acesso. Pagamento continua usando o fluxo já existente de recebimentos; o frontend deve consultar novamente o painel depois de pagar para obter a nova cobrança principal, totais e perfil.
 
 ---
+
+### 8.9 Envio diário e confiabilidade
+
+`AgendaTransporteService` centraliza transporte utilizado pelo dashboard e pela mensagem. A programação geral consulta todas as viagens de todas as grades do dia, sem consultar `Viagem.data`. Reúne pontos pelos dois vínculos, deduplica por ID e ordena por ordem de parada. Viagens sem grade/dia são excluídas da programação confirmada; finais de semana não têm programação nos enums atuais.
+
+Automático às 15h em `America/Sao_Paulo`, com verificação a cada minuto entre 15h e antes das 18h. O backend precisa estar ligado. Se não houver viagens/destinatários, nenhum lote automático é criado, permitindo recuperação quando o cadastro for corrigido dentro da janela. O lote automático é único por dia.
+
+Envio manual normal já registrado impede repetição normal para o mesmo endereço naquele dia, inclusive no automático. Correções explícitas geram nova revisão. Mensagens já aceitas não são recolhidas. Desativar o automático impede novos lotes, mas não remove entregas já enfileiradas.
+
+A fila persistida reserva atomicamente sob lock curto, com ritmo global de até uma entrega por segundo. O SMTP ocorre fora de transações de banco. Antes de enviar, a conta é revalidada: ativa, aluno não arquivado, papel permitido e mesmo endereço atual. Conta excluída/inativa, aluno arquivado ou e-mail alterado suprime a entrega preparada. Não existe opção de consentimento individual ou cancelamento por e-mail nesta versão; o envio operacional contempla todos os associados ativos conforme decisão confirmada.
+
+Estados: `PENDENTE`, `PROCESSANDO`, `ACEITA_SMTP`, `FALHA`, `INCERTA`, `SUPRIMIDA`, `EXPIRADA`. Falhas comprovadamente anteriores ao envio podem ter três novas tentativas, após 1, 5 e 15 minutos. Timeout/resultado ambíguo fica INCERTA sem repetição automática. Processamentos abandonados por mais de dez minutos também ficam INCERTA. Pendências automáticas expiram às 18h; manuais, na virada do dia de São Paulo.
+
+Texto e HTML são gerados em UTF-8, com escape de conteúdo cadastrado. O gateway usa um destinatário por mensagem, TLS e timeouts de conexão/leitura/escrita. Não há chamadas SMTP na inicialização nem nos testes automatizados.
+
+### 8.10 Arquivamento e histórico do aluno
+
+Arquivamento, restauração, exclusão, vínculos novos, cobrança, pagamento e manutenção de acesso compartilham sincronização pelo aluno/pessoa. Ordem: aluno/pessoa → usuário → cobrança/dependente; múltiplas pessoas em ordem crescente. Entidades carregadas antes do lock são recarregadas; locks não se estendem ao SMTP. ADMIN mantém a proteção existente do conjunto de administradores ativos.
+
+Arquivar define `arquivado=true` e desativa a conta, se existir. Incrementa a versão na primeira transição, inclusive de conta já inativa, e ao corrigir conta indevidamente ativa de arquivado. Repetição consistente não incrementa a versão.
+
+Restaurar altera o cadastro, sem gerar cobranças ou reativar acesso. Na transição, acesso inconsistentemente ativo é corrigido e revogado. Repetir restauração de cadastro já restaurado não desativa uma conta legitimamente reativada depois.
+
+Arquivados não aparecem em pessoas disponíveis para novos acessos. Criar/reativar conta retorna 409 até restaurar o cadastro, inclusive quando a conta estiver indevidamente ativa. Editar e-mail/senha e excluir apenas o acesso continua permitido, sem reativação. Login e JWT verificam arquivamento independentemente de `Usuario.ativo`.
+
+Novas cobranças e vínculos financeiros para arquivados são rejeitados. Edição de conta existente mantendo o proprietário é permitida; trocar proprietário para arquivado é bloqueado. Recorrência seleciona não arquivados e revalida estado/última conta sob lock. Após restauração, retoma a regra existente de última conta + 30 dias, podendo produzir vencimentos antigos; não reinicia o ciclo automaticamente.
+
+Arquivados ficam fora da listagem padrão, indicadores operacionais, capacidade, seleção de acesso e destinatários. Financeiro, recebimentos, recibos, chamados, faculdades, rotas e programação permanecem. Abertura de chamado revalida o solicitante sob lock.
+
+`AlunoService` coordena arquivamento, restauração, consulta dos impedimentos e exclusão protegida. `AlunoController` utiliza somente esse serviço; o caminho genérico de exclusão em `PessoaService` também delega a ele quando encontra um aluno. A antiga fachada `AlunoArquivamentoService` foi incorporada ao `AlunoService`.
+
+`AlunoArquivamentoTransacionalService` permanece como bean separado, responsável pelas transações, bloqueios e regras de preservação. Os métodos de coordenação do `AlunoService` não abrem uma transação externa: a exclusão traduz falhas de integridade somente depois de sair da unidade de escrita e de seu rollback; não continua nem consulta uma transação inválida. Falhas preservam integralmente aluno e acesso. Esta reorganização não altera endpoints, DTOs, permissões ou respostas HTTP e não exige alteração do frontend nem nova migration.
+
+Entregas ainda não enviadas são suprimidas quando o worker identifica arquivamento, com `SUPRIMIDA` e `CONTA_OU_EMAIL_ALTERADO`. Restaurar não reenfileira. SMTP já aceito não pode ser recolhido; existe uma janela entre revalidação e chamada externa, sem garantia de cancelar envio já iniciado.
+
+Interface futura: Arquivar como ação principal, filtro de arquivados/todos, restauração separada da reativação e consulta de impedimentos antes de exclusão. Não há DELETE definitivo em lote; arquivamento em lote utiliza PATCHs individuais sequenciais, com resultados parciais reais. O frontend e o guia recebido não foram alterados.
 
 ## 9. Enumerações aceitas
 
@@ -601,6 +690,7 @@ Permissões efetivas:
 | `GET /dashboard/admin` | não | sim | não | não |
 | `GET /dashboard/motorista` | não | não | sim | não |
 | `GET /dashboard/aluno` | não | não | não | sim |
+| `/integracoes/email/**` | não | sim | não | não |
 | `/usuarios/**` | não | sim | não | não |
 | POST `/chamados-manutencao` e GET `/chamados-manutencao/minhas` | não | não | sim | sim |
 | GET `/chamados-manutencao/onibus` | não | sim | sim | sim |
@@ -680,12 +770,23 @@ O elemento Maven inválido que bloqueava a compilação foi removido. O schema a
 - `V3__administracao_segura_usuario.sql`: adiciona `usuario.ativo BOOLEAN NOT NULL DEFAULT TRUE` e `usuario.token_version BIGINT NOT NULL DEFAULT 0`, preservando as contas existentes;
 - `V4__matricula_contas_receber.sql`: torna obrigatórios os vínculos financeiros e impede recebimento duplicado e duas cobranças do mesmo aluno no mesmo vencimento;
 - `V5__chamados_manutencao.sql`: amplia a descrição para 2.000, adiciona observação administrativa, obrigatoriedade dos campos, validação de descrição não vazia e índices; mantém `responsavel_id` e as FKs existentes. Falha com mensagem clara se houver chamado legado incompleto, sem apagar registros nem inventar autor;
+- `V6__notificacoes_whatsapp.sql`: SQL original mantido por compatibilidade com bancos que já aplicaram essa versão; código da integração antiga não está nesta branch e dados legados não são apagados;
+- `V7__programacao_email.sql`: cria configuração inicialmente desativada, lotes, entregas, unicidade diária/revisão e índices da fila; não altera pessoas, contas ou viagens existentes;
+- `V8__arquivamento_alunos.sql`: adiciona `pessoa.arquivado BOOLEAN NOT NULL DEFAULT FALSE`, mantendo todos os registros inicialmente não arquivados, sem alterar relações financeiras;
 - em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica as evoluções posteriores;
 - depois das migrações, Hibernate usa `ddl-auto=validate` e falha se o mapeamento divergir do banco.
 
 Antes de executar a migração em um ambiente importante, faça backup do banco. Os registros existentes de `pessoa` não são apagados.
 
 ---
+
+### Configuração externa de e-mail
+
+Configurar somente no servidor: `EMAIL_ENABLED` (false inicial), `EMAIL_PRODUCTION` (false inicial), `EMAIL_TEST_RECIPIENTS`, `EMAIL_FROM`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT` (587 padrão), `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD`, `EMAIL_STARTTLS` (true padrão) e `EMAIL_SSL` (false padrão). Escolher exatamente uma opção TLS conforme o provedor. Usuário e senha devem estar presentes juntos, ou ambos vazios para relay sem autenticação.
+
+`EMAIL_SCHEDULERS_ENABLED=true` habilita rotina/fila; nos testes é false. Automático também depende do campo persistido ativado explicitamente pelo ADMIN. Modo de teste envia somente a endereços da lista externa permitida, separados por vírgula; a lista vazia bloqueia envios. Não enviar dados fictícios de produção nem versionar credenciais. A API existente continua inicializando sem credenciais de e-mail.
+
+Disponibilidade indica configuração mínima válida, não conexão SMTP comprovada. Validar um envio real controlado e remetente autorizado no provedor antes de ativar produção/automático. O guia detalha o procedimento.
 
 ## 12. Testes e tratamento de erros
 
@@ -697,13 +798,66 @@ Os testes de manutenção cobrem autoria automática e campos protegidos, permis
 
 `ManutencaoPostgresMigrationTests` é opcional, habilitado por `MANUTENCAO_TEST_DB_URL`, com usuário/senha externos em `MANUTENCAO_TEST_DB_USER` e `MANUTENCAO_TEST_DB_PASSWORD`. Valida V1–V5 em schema vazio, atualização V4→V5 com registros preservados, FKs/obrigatoriedade/limites e falha segura para chamado incompleto. Cria e remove somente schemas temporários próprios `test_manutencao_*`, sem alterar o schema público.
 
-`DashboardPostgresIntegrationTests` repete os 15 testes do dashboard contra PostgreSQL real quando `DASHBOARD_TEST_DB_URL`, `DASHBOARD_TEST_DB_USER` e `DASHBOARD_TEST_DB_PASSWORD` são informados ao processo Maven. Aplica V1–V5 e valida o schema em um schema temporário próprio `test_dashboard_*`, removido ao final. Sem essas variáveis, essa suíte é ignorada; os 15 testes H2 continuam executando. Não usa nem modifica as tabelas públicas do sistema.
+`DashboardPostgresIntegrationTests` repete os 15 testes do dashboard contra PostgreSQL real quando `DASHBOARD_TEST_DB_URL`, `DASHBOARD_TEST_DB_USER` e `DASHBOARD_TEST_DB_PASSWORD` são informados ao processo Maven. Aplica as migrations atuais V1–V8 e valida o schema em um schema temporário próprio `test_dashboard_*`, removido ao final. Sem essas variáveis, essa suíte é ignorada; os 15 testes H2 continuam executando. Não usa nem modifica as tabelas públicas do sistema.
+
+`EmailIntegrationTests` cobre agenda geral/múltiplas grades/datas legadas, faculdades/pontos, conteúdo comum, ausência de dados sensíveis, destinatários ativos, modo de teste, permissões HTTP/serviços, UUID idempotente, reenvio, snapshot, alteração/exclusão de conta, fila fora de transações SMTP, concorrência, ritmo, incerteza, retries, recuperação, expiração e fuso. `SmtpEmailGatewayTests` verifica MIME UTF-8 texto/HTML sem PDF, um destinatário, ausência de CC/BCC e classificação segura de falhas.
+
+`EmailPostgresIntegrationTests` repete os testes em schema temporário V1–V8; `EmailPostgresMigrationTests` valida banco vazio, atualização V5/V6, preservação de dados e histórico e restrição de duplicidade. Habilitar com `EMAIL_TEST_DB_URL`, `EMAIL_TEST_DB_USER` e `EMAIL_TEST_DB_PASSWORD`. Apenas schemas temporários `test_email_*` são criados/removidos. Gateway simulado: nenhum e-mail real é enviado.
 
 O `RestExceptionHandler` padroniza as falhas de autenticação, validação, formato inválido, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` mantêm handlers locais legados para `RuntimeException`, mas possuem handlers específicos `409/404` para atribuição de ônibus. Recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
 
 ---
 
+`ArquivamentoAlunoIntegrationTests` cobre APIs, booleano estrito, permissões, filtros, revogação/idempotência, correção de inconsistências, restauração separada da conta, exclusão por ambos os caminhos, impedimentos de todos os estados, histórico, acesso, edição comum, cobranças diretas/recorrência, pagamento, capacidade, indicadores, e-mails, rollback e concorrência.
+
+`ArquivamentoAlunoPostgresIntegrationTests` repete os cenários em schema temporário V1–V8. `ArquivamentoAlunoPostgresMigrationTests` valida V7→V8 e schema vazio, defaults dos três subtipos, preservação de financeiro e ausência de cascatas novas. Habilitar com `ARQUIVAMENTO_TEST_DB_URL`, `ARQUIVAMENTO_TEST_DB_USER` e `ARQUIVAMENTO_TEST_DB_PASSWORD`. Apenas schemas temporários `test_arquivo_*` são criados/removidos; alunos reais e SMTP não são usados.
+
 ## 13. Limitações e pontos de atenção identificados
+
+### Validação executada em 14/10/2026
+
+Build final com JDK 21.0.8 e Maven do IntelliJ:
+
+```powershell
+$env:JAVA_HOME='C:\Users\melhe\.jdks\ms-21.0.8'
+& 'C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2\plugins\maven\lib\maven3\bin\mvn.cmd' clean package
+```
+
+Foram informadas ao processo as variáveis `ARQUIVAMENTO_TEST_DB_*`, `EMAIL_TEST_DB_*`, `DASHBOARD_TEST_DB_*` e `MANUTENCAO_TEST_DB_*`, apontando ao PostgreSQL local com schemas temporários próprios.
+
+Resultado: **194 testes, zero falhas, zero erros, zero ignorados; BUILD SUCCESS**. Arquivamento: 34 testes H2, os mesmos 34 no PostgreSQL e dois testes de migration. A suíte restante de autenticação, manutenção, dashboard, financeiro e e-mail também passou. JAR gerado em `target`.
+
+V8 validada em schema vazio e atualização V7→V8, com defaults de aluno/motorista/admin, histórico financeiro preservado e sem cascatas novas. Os testes de concorrência e rollback foram executados no PostgreSQL, não apenas simulados no H2.
+
+Os testes usaram H2/schema PostgreSQL próprios e gateway simulado, sem executar arquivamento/exclusão de alunos reais ou SMTP real. Homologação manual da interface e envio real continuam pendentes; o frontend, guia recebido e diagrama não foram modificados. Não houve commit/push.
+
+**Ocorrência de ambiente:** na conferência final, o schema real também apresentava V8, registrada em 14/10/2026 às 11:20:21. Foi identificado um processo `IntegradorApplication` já em execução. A aplicação da migration é compatível com recarga automática do backend durante a compilação, mas a origem exata não foi auditada. Não foi executado comando de migração no schema público pelo agente; ainda assim, a migração real ocorreu durante o trabalho e deve ser considerada na homologação.
+
+Conferência somente de leitura após o build: seis alunos reais, todos com `arquivado=false`; três motoristas e duas pessoas-base também não arquivados. Não foi revertida a migration nem alterado o histórico Flyway. Para evitar recargas não planejadas em próximas alterações/builds, interromper previamente a execução do backend no IDE. Os schemas temporários de arquivamento foram removidos.
+
+### Validação da reorganização dos serviços em 14/10/2026
+
+Após incorporar a coordenação de `AlunoArquivamentoService` ao `AlunoService`, a suíte completa foi novamente executada com JDK 21.0.8, H2, PostgreSQL em schemas temporários e gateways simulados: **194 testes, zero falhas, zero erros, zero ignorados; BUILD SUCCESS**.
+
+Para evitar recarga do backend aberto no IDE, foi usado um POM auxiliar ignorado pelo Git, com os mesmos fontes, recursos, dependências e plugins do projeto, mas saída separada. Com as variáveis de PostgreSQL mencionadas acima:
+
+```powershell
+& 'C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2\plugins\maven\lib\maven3\bin\mvn.cmd' -f target/verificacao-services/pom.xml package
+```
+
+Relatórios e JAR desta validação estão em `target/verificacao-services/build`; `target/classes` não foi recompilado por esse comando. Nenhuma migration nova foi criada. O frontend, o guia recebido e o diagrama permaneceram intactos; as alterações anteriores de e-mail foram preservadas, sem commit/push. Para executar a refatoração no IDE, parar o backend antes de um build limpo e reiniciá-lo depois.
+
+### Revisão pré-PR da integração por e-mail e arquivamento em 14/10/2026
+
+A comparação com `origin/main` confirmou que a base já é ancestral de `codex/integracao-email`, sem conflitos de merge. A revisão preservou integralmente arquivamento/restauração, revogação de tokens, filtros, histórico financeiro e exclusão protegida; as migrations existentes e o diagrama não foram alterados.
+
+Foi corrigida uma regressão no CRUD de contas a pagar: a pessoa vinculada continua opcional, conforme o modelo e schema anteriores. Despesas sem pessoa podem ser criadas, editadas e pagas; o recibo trata o nome ausente sem erro. Continua proibido criar ou transferir vínculo financeiro para aluno arquivado, com edição do histórico mantendo a mesma pessoa permitida. Foi removida a projeção não utilizada que confundia conta inexistente com conta sem pessoa.
+
+Quatro novos cenários de regressão são executados tanto no H2 quanto no PostgreSQL: CRUD/pagamento/recibo de despesa sem pessoa; bloqueio de novo vínculo com arquivado e manutenção do histórico; atribuição/remoção do vínculo opcional e validação; salário do motorista com recorrência de 30 dias, pagamento, recibo e proteção contra pagamento repetido.
+
+Comando de validação: `mvn -f target/verificacao-services/pom.xml package`, usando JDK 21.0.8 e as quatro famílias de variáveis PostgreSQL de teste. Resultado: **202 testes, zero falhas, zero erros, zero ignorados; BUILD SUCCESS**. Foram executados 38 testes de arquivamento/regressão financeira em cada banco, dois testes de migration de arquivamento e 124 testes restantes de autenticação, manutenção, dashboard, mensalidade e e-mail. Saída isolada em `target/verificacao-services/build`, schemas PostgreSQL temporários e gateways simulados; sem SMTP real nem arquivamento/exclusão de cadastros reais. Homologação manual do frontend e SMTP real permanece pendente.
+
+### Pontos de atenção
 
 1. As credenciais do PostgreSQL ainda estão em texto simples no repositório.
 2. `ATIV0` e `INATIV0` usam zero e podem causar integração incorreta.
@@ -712,7 +866,7 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, for
 5. `ViagemDTO` pode omitir faculdades quando a viagem não possui motorista.
 6. O DTO de aluno aceita mensalidade, mas status e data de cadastro continuam controlados pelo serviço.
 7. O DTO de motorista não aceita tipo de pessoa; o serviço o define automaticamente como `MOTORISTA`.
-8. A capacidade da viagem usa todos os alunos `ATIV0` das faculdades, pois não existe vínculo aluno-viagem.
+8. A capacidade da viagem usa todos os alunos não arquivados com matrícula `ATIV0` das faculdades, pois não existe vínculo aluno-viagem.
 9. Pagamento parcial marca a conta integralmente como `PAGO`.
 10. `PagamentoRepository.findByContaPagarId` espera um resultado, embora o modelo não imponha unicidade.
 11. Pessoa possui camadas internas, mas não API própria; manutenção, contas a receber e recebimentos expõem fluxos específicos, sem CRUD genérico completo.
@@ -725,12 +879,16 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, for
 18. Datas legadas de viagem continuam nos contratos antigos por compatibilidade; somente a grade/dia determina a agenda do dashboard.
 19. O dashboard mostra transporte da faculdade, não uma atribuição individual de ônibus ou ponto ao aluno; não há horários ou rastreamento.
 20. Dashboards de transporte retornam todas as atribuições pertinentes, sem paginação de servidor; bases grandes podem exigir paginação futura.
+21. E-mail depende de provedor SMTP, credencial/remetente válidos e backend ligado; limites e reputação são definidos pelo provedor.
+22. Aceite SMTP não comprova entrega/leitura; não há webhooks de entrega, rastreamento de abertura, PDF ou cancelamento individual nessa versão.
+23. O detalhe do lote inclui todas as entregas, sem paginação individual; listas grandes podem exigir paginação futura.
+24. Tabelas WhatsApp legadas permanecem por segurança do histórico Flyway, mas o código da funcionalidade antiga não está nesta branch.
 
 ---
 
 ## 14. Estado da revisão
 
-- **Última revisão:** 10 de outubro de 2026
+- **Última revisão:** 14 de outubro de 2026
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
-- **Status:** em desenvolvimento
+- **Status:** em desenvolvimento; arquivamento implementado no backend, frontend não alterado
 - **Fonte:** implementação atual do repositório

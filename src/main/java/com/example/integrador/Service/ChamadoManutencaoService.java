@@ -28,24 +28,28 @@ public class ChamadoManutencaoService {
     private final ChamadoManutencaoRepository repository;
     private final OnibusRepository onibusRepository;
     private final UsuarioRepository usuarioRepository;
+    private final PessoaBloqueioService bloqueios;
 
     public ChamadoManutencaoService(ChamadoManutencaoRepository repository,
                                    OnibusRepository onibusRepository,
-                                   UsuarioRepository usuarioRepository) {
+                                   UsuarioRepository usuarioRepository, PessoaBloqueioService bloqueios) {
         this.repository = repository;
         this.onibusRepository = onibusRepository;
         this.usuarioRepository = usuarioRepository;
+        this.bloqueios = bloqueios;
     }
 
     @Transactional
     @PreAuthorize("hasAnyRole('ALUNO', 'MOTORISTA')")
     public ChamadoManutencaoResponse abrir(AbrirChamadoRequest request) {
         Usuario usuario = usuarioAtual();
+        var solicitante = bloqueios.bloquearPessoa(usuario.getPessoa().getId());
+        bloqueios.exigirNaoArquivado(solicitante);
         var onibus = onibusRepository.findById(request.onibusId())
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Ônibus não encontrado"));
         ChamadoManutencao chamado = new ChamadoManutencao();
         chamado.setOnibus(onibus);
-        chamado.setSolicitante(usuario.getPessoa());
+        chamado.setSolicitante(solicitante);
         chamado.setDescricao(request.descricao().trim());
         chamado.setDataAbertura(LocalDate.now());
         chamado.setStatus(StatusChamado.ABERTO);

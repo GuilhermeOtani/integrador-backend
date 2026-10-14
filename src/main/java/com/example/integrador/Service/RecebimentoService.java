@@ -16,28 +16,40 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 
 @Service
 public class RecebimentoService {
     private final RecebimentoRepository recebimentoRepository;
     private final ContaReceberRepository contaReceberRepository;
     private final AlunoRepository alunoRepository;
+    private final PessoaBloqueioService bloqueios;
+    private final EntityManager em;
 
     public RecebimentoService(RecebimentoRepository recebimentoRepository,
                               ContaReceberRepository contaReceberRepository,
-                              AlunoRepository alunoRepository) {
+                              AlunoRepository alunoRepository, PessoaBloqueioService bloqueios, EntityManager em) {
         this.recebimentoRepository = recebimentoRepository;
         this.contaReceberRepository = contaReceberRepository;
         this.alunoRepository = alunoRepository;
+        this.bloqueios = bloqueios;
+        this.em = em;
     }
 
     @Transactional
     @PreAuthorize("hasRole('ALUNO')")
     public RecebimentoResponse realizarPagamento(Long contaId, FormaPagamento formaPagamento,
                                                   Long alunoAutenticadoId) {
+        Long proprietario = contaReceberRepository.findAlunoIdById(contaId)
+                .filter(id -> id.equals(alunoAutenticadoId))
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Matrícula não encontrada."));
+        var aluno = bloqueios.bloquearAluno(proprietario);
+        bloqueios.exigirNaoArquivado(aluno);
         ContaReceber conta = contaReceberRepository.findLockedById(contaId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException(
                         "Matrícula de ID " + contaId + " não encontrada"));
+        em.refresh(conta, LockModeType.PESSIMISTIC_WRITE);
         validarProprietario(conta, alunoAutenticadoId);
 
         if (conta.getStatus() == StatusFinanceiro.PAGO
@@ -55,8 +67,8 @@ public class RecebimentoService {
         conta.setStatus(StatusFinanceiro.PAGO);
         contaReceberRepository.save(conta);
 
-        conta.getAluno().setStatusMatricula(StatusMatricula.ATIV0);
-        alunoRepository.save(conta.getAluno());
+        aluno.setStatusMatricula(StatusMatricula.ATIV0);
+        alunoRepository.save(aluno);
 
         return RecebimentoResponse.fromEntity(salvo);
     }

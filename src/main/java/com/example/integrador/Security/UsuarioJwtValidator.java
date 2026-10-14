@@ -29,7 +29,7 @@ public class UsuarioJwtValidator implements OAuth2TokenValidator<Jwt> {
             return OAuth2TokenValidatorResult.failure(INVALID_TOKEN);
         }
 
-        boolean valido = usuarioRepository.existsByIdAndAtivoTrueAndTokenVersion(
+        boolean valido = usuarioRepository.tokenElegivel(
                 usuarioId, tokenVersion);
         return valido
                 ? OAuth2TokenValidatorResult.success()

@@ -2,6 +2,10 @@ package com.example.integrador.Controller;
 
 
 import com.example.integrador.DTO.AlunoDTO;
+import com.example.integrador.DTO.ArquivamentoAlunoRequest;
+import com.example.integrador.DTO.SituacaoExclusaoAlunoResponse;
+import com.example.integrador.Enum.SituacaoArquivamentoAluno;
+import org.springframework.http.HttpStatus;
 import com.example.integrador.Model.Aluno;
 import com.example.integrador.Service.AlunoService;
 import jakarta.validation.Valid;
@@ -21,8 +25,18 @@ AlunoController {
     }
 
     @GetMapping("/listar")
-    public List<Aluno> listarTodosAlunos() {
-        return alunoService.listarTodosAlunos();
+    public List<Aluno> listarTodosAlunos(@RequestParam(defaultValue = "NAO_ARQUIVADOS") SituacaoArquivamentoAluno situacao) {
+        return alunoService.listarTodosAlunos(situacao);
+    }
+
+    @PatchMapping("/{id}/arquivamento")
+    public Aluno arquivar(@PathVariable Long id, @Valid @RequestBody ArquivamentoAlunoRequest request) {
+        return alunoService.arquivarAluno(id, request.arquivado());
+    }
+
+    @GetMapping("/{id}/situacao-exclusao")
+    public SituacaoExclusaoAlunoResponse situacaoExclusao(@PathVariable Long id) {
+        return alunoService.consultarSituacaoExclusao(id);
     }
 
     @PostMapping("/salvar-aluno")
@@ -36,6 +50,7 @@ AlunoController {
     }
 
     @DeleteMapping("/deletar-aluno/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deletarAlunoPorId(@PathVariable Long id) {
         alunoService.deletarAlunoPorId(id);
     }

@@ -69,7 +69,7 @@ public class Usuario implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return ativo;
+        return ativo && (!(pessoa instanceof Aluno aluno) || !aluno.isArquivado());
     }
 
     public Long getId() {

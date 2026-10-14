@@ -171,7 +171,16 @@ class MatriculaFinanceiraIntegrationTests {
         dto.setNome(nome);
         dto.setMatricula(matricula);
         dto.setMensalidade(new BigDecimal(mensalidade));
-        return alunoService.salvarAluno(dto);
+        var anterior = org.springframework.security.core.context.SecurityContextHolder.getContext();
+        var contexto = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        contexto.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "admin-fixture", null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+        try {
+            org.springframework.security.core.context.SecurityContextHolder.setContext(contexto);
+            return alunoService.salvarAluno(dto);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.setContext(anterior);
+        }
     }
 
     private String criarContaEToken(Aluno aluno, String email) {
