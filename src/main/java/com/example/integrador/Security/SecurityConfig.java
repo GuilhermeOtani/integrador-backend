@@ -125,6 +125,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/webhooks/whatsapp").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/webhooks/whatsapp").permitAll()
+                        .requestMatchers("/whatsapp/**").hasAnyRole("ALUNO", "MOTORISTA")
+                        .requestMatchers("/integracoes/whatsapp/**").hasRole("ADMIN")
                         .requestMatchers("/auth/me").authenticated()
                         .requestMatchers("/usuarios/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/dashboard/aluno").hasRole("ALUNO")

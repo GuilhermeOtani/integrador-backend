@@ -2,7 +2,7 @@
 
 ## 1. Escopo desta documentação
 
-Este documento descreve o estado efetivamente implementado no backend em **10 de outubro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
+Este documento descreve o estado efetivamente implementado no backend em **14 de outubro de 2026**. As informações abaixo foram conferidas diretamente nos controllers, services, repositories, entidades, DTOs, enums, configurações, `pom.xml` e testes.
 
 O projeto está em desenvolvimento. Por isso, o documento diferencia recursos expostos pela API REST, recursos apenas internos, regras de negócio implementadas e limitações presentes no código atual.
 
@@ -12,7 +12,7 @@ O projeto está em desenvolvimento. Por isso, o documento diferencia recursos ex
 
 O Projeto Integrador é um backend para gestão de transporte escolar/universitário. A aplicação usa **Java 21**, **Spring Boot 4.0.3**, Spring Web MVC, Spring Data JPA, Spring Security, PostgreSQL e Lombok.
 
-No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado, administração de contas de acesso e dashboards específicos de aluno, motorista e administrador.
+No estado atual, a API possui operações para alunos, motoristas, ônibus, faculdades, rotas, pontos de embarque, viagens, grades diárias, contas a pagar, pagamentos, contas a receber, recebimentos, recibos e chamados de manutenção. Também possui autenticação JWT, consulta do perfil autenticado, administração de contas de acesso, dashboards específicos por papel e integração individual com a WhatsApp Cloud API para programação diária em PDF.
 
 Pessoa continua sem controller próprio. Conta a receber e recebimento possuem endpoints específicos para a matrícula do aluno. Chamados de manutenção possuem abertura/consulta por aluno e motorista e atendimento administrativo.
 
@@ -44,6 +44,7 @@ src/main/java/com/example/integrador/
 |-- Repository/   Spring Data JPA e consultas agregadas do dashboard
 |-- Security/     configuração do Spring Security
 |-- Service/      CRUD, conversões e regras de negócio
+|-- Whatsapp/     assinatura, PDFs, cliente Meta, fila, rotinas e endpoints da integração
 `-- IntegradorApplication.java
 ```
 
@@ -60,7 +61,8 @@ src/main/java/com/example/integrador/
 | Persistência | Spring Data JPA e Hibernate |
 | API web | Spring Web MVC |
 | Segurança | Spring Security 7, JWT HS256 stateless, BCrypt e RBAC |
-| Migrações | Flyway V1–V5, incluindo JWT, administração segura, matrícula financeira e manutenção |
+| Migrações | Flyway V1–V6, incluindo JWT, administração segura, matrícula financeira, manutenção e WhatsApp |
+| PDF | Apache PDFBox 3.0.8, fonte Bitstream Vera embarcada com licença |
 | Validação | Jakarta Bean Validation nos contratos de autenticação, usuários, matrícula e manutenção |
 | Banco | PostgreSQL |
 | Redução de boilerplate | Lombok |
@@ -501,7 +503,41 @@ Contas abertas a receber/pagar, vencidas e vencendo em sete dias são posição 
 
 Não são necessárias novas tabelas/migrations. Guia específico: `GUIA_DASHBOARD_FRONTEND.md`, adaptado ao Angular standalone/PrimeNG atual, com contratos, navegação, layouts, pagamento compartilhado e testes sugeridos. O frontend não foi modificado nesta entrega.
 
-### 7.17 Recursos sem endpoint
+### 7.17 Programação individual por WhatsApp
+
+| Método | Caminho | Acesso | Resultado |
+|---|---|---|---|
+| GET | `/whatsapp/minha-assinatura` | ALUNO/MOTORISTA | situação própria, sem hash/código |
+| POST | `/whatsapp/minha-assinatura/ativacao` | ALUNO/MOTORISTA | assinatura pendente e link de confirmação |
+| DELETE | `/whatsapp/minha-assinatura` | ALUNO/MOTORISTA | cancela recebimento, 204 |
+| GET | `/whatsapp/minha-programacao/pdf` | ALUNO/MOTORISTA | PDF próprio do dia, sem cache; 404 sem viagens |
+| GET/PUT | `/integracoes/whatsapp/configuracao` | ADMIN | consulta segura / ativa ou desativa automático |
+| GET | `/integracoes/whatsapp/previa?usuarioId=...` | ADMIN | programação, elegibilidade e impedimentos |
+| GET | `/integracoes/whatsapp/previa/pdf?usuarioId=...` | ADMIN | PDF da prévia individual, sem envio |
+| POST | `/integracoes/whatsapp/envios` | ADMIN | lote assíncrono, 202 |
+| GET | `/integracoes/whatsapp/envios?pagina=0&tamanho=20` | ADMIN | histórico paginado; tamanho máximo 100 |
+| GET | `/integracoes/whatsapp/envios/{id}` | ADMIN | contadores e entregas com números mascarados |
+| GET/POST | `/webhooks/whatsapp` | verificação Meta | desafio / eventos com assinatura HMAC |
+
+A assinatura pertence à conta `Usuario`, não altera `Pessoa.telefone` e exige conta ativa. Os endpoints pessoais obtêm a identidade pelo `sub` do JWT. POST de ativação recebe `numero` internacional e `aceite=true`. Cria código aleatório de uso único, válido por 30 minutos, armazenado só como SHA-256, e permite cinco pedidos por conta/hora. Somente uma mensagem `ATIVAR <codigo>` do próprio número, validada pelo webhook, muda a assinatura para ATIVA. Trocar o número suspende o anterior e invalida o código anterior. Um número não pode ter duas assinaturas ativas. Cancelamento pelo perfil ou por SAIR/PARAR/CANCELAR impede novos envios.
+
+PUT configuração recebe `{"automatico":true}` ou false. Antes de habilitar, verifica credenciais, webhook e aprovação/formato do template na Meta. Desabilitar não depende da disponibilidade externa. Credenciais nunca são devolvidas ao Angular.
+
+POST de envio recebe `requestId` UUID, `publico` (TODOS/ALUNOS/MOTORISTAS), `reenviar` e `motivo`. Mesmo UUID com os mesmos parâmetros retorna o lote existente; parâmetros diferentes retornam 409. Correção usa novo UUID, reenviar=true e motivo obrigatório de até 500 caracteres. A data é sempre o dia atual em São Paulo, sem envio retroativo.
+
+A consulta da agenda foi extraída para um serviço interno compartilhado com o dashboard. Aluno recebe destinos explícitos da faculdade; motorista recebe atribuições próprias. A matrícula não filtra o recebimento: conta ativa, assinatura confirmada e programação são os critérios. Sem faculdade/programação ou número fora da lista de teste, a entrega é suprimida. Datas legadas permanecem intactas e são ignoradas. Pontos são deduplicados/ordenados; veículos indisponíveis aparecem com aviso.
+
+PDFs são gerados em memória com fonte livremente redistribuível, quebra de texto, paginação e rodapé. Contêm programação, ônibus, motorista, rotas, pontos, destinos e avisos; não contêm CPF, CNH, salários, cobranças, outros alunos, fotos grandes ou horários inventados. São enviados por upload de mídia e template com cabeçalho DOCUMENT, idioma pt_BR e três parâmetros (nome, data, referência), sem URLs públicas.
+
+O módulo possui configuração global, assinatura, lote e entrega. Programação JSON/PDF é congelada na preparação da entrega. Assinatura é removida ao excluir a conta; solicitante/destinatário nas relações do histórico ficam nulos, preservando ID original, documento e resultado sem bloquear exclusões já permitidas.
+
+O webhook GET valida Verify Token e retorna hub.challenge. POST valida `X-Hub-Signature-256` sobre os bytes originais com App Secret, WABA ID e Phone Number ID. Aceita eventos somente da conta/número configurados. Eventos de entrega não regridem estados confirmados; correlação opaca permite reconhecer webhook que chegue antes da resposta HTTP.
+
+Erros seguem ProblemDetail: 400 validação, 401/403 autenticação/permissão ou assinatura inválida, 404 inexistência/PDF sem programação, 409 conflito/limite/requestId e 503 integração indisponível. HTTP 202 significa fila registrada, não entrega.
+
+Guia completo: `GUIA_WHATSAPP_FRONTEND.md`, incluindo conta Meta, template, webhook, variáveis, perfil, tela ADMIN, interfaces, serviços, PDFs autenticados e testes. Angular não foi alterado nesta entrega. A conta Meta e os envios reais precisam ser configurados/validados separadamente.
+
+### 7.18 Recursos sem endpoint
 
 Não há controller para `Pessoa`. Conta a receber, recebimento e chamado de manutenção expõem somente os contratos específicos descritos acima, sem CRUD genérico completo.
 
@@ -561,6 +597,16 @@ O dashboard ignora a data legada da viagem e calcula a próxima ocorrência do d
 
 Consultar um dashboard não executa a rotina financeira, não cria conta, não muda matrícula e não atualiza estado financeiro por atraso. O vencimento da cobrança não expira matrícula ou acesso. Pagamento continua usando o fluxo já existente de recebimentos; o frontend deve consultar novamente o painel depois de pagar para obter a nova cobrança principal, totais e perfil.
 
+### 8.9 Agendamento e confiabilidade do WhatsApp
+
+Integração e automático começam desativados. A rotina verifica a criação às 15h e a recuperação a cada minuto entre 15h e antes das 18h, sempre em America/Sao_Paulo. Um lote automático é único por dia. Se o manual já preparou a programação para o destinatário, o automático não repete. Supressão sem PDF não representa mensagem enviada e permite cadastro corrigido; correção de uma programação já preparada exige reenvio explícito.
+
+Fila persistida com reserva atômica, bloqueio curto da configuração global e ritmo de reserva de no máximo uma entrega por segundo entre workers. PDF e comunicação externa ficam fora dos bloqueios de banco. Conta, assinatura, revisão e número são conferidos na reserva e novamente depois do upload, antes da mensagem. Não é possível recolher uma mensagem já aceita pela Meta.
+
+Estados: PENDENTE, PROCESSANDO, ACEITA, ENVIADA, ENTREGUE, LIDA, FALHA, INCERTA, SUPRIMIDA e EXPIRADA. Aceite HTTP não comprova entrega. Webhook confirma envio/entrega/leitura. Falhas comprovadas anteriores ao aceite têm até três novas tentativas após 1, 5 e 15 minutos. Timeout/5xx de mensagem ou resposta ambígua fica INCERTA, sem repetição automática; falha de upload não significa mensagem enviada. Reserva PROCESSANDO abandonada há mais de dez minutos fica INCERTA.
+
+Pendências automáticas expiram às 18h; manuais não atravessam a meia-noite. O backend precisa permanecer ligado; frontend fechado não interrompe a rotina. Não há calendário de feriados ou envio de dias anteriores, grupos, integração por WhatsApp Web ou chatbot geral.
+
 ---
 
 ## 9. Enumerações aceitas
@@ -598,6 +644,9 @@ Permissões efetivas:
 |---|---:|---:|---:|---:|
 | `POST /auth/login` e `OPTIONS` | sim | sim | sim | sim |
 | `GET /auth/me` | não | sim | sim | sim |
+| `/whatsapp/**` | não | não | sim | sim |
+| `/integracoes/whatsapp/**` | não | sim | não | não |
+| GET/POST `/webhooks/whatsapp` | verificação Meta | verificação Meta | verificação Meta | verificação Meta |
 | `GET /dashboard/admin` | não | sim | não | não |
 | `GET /dashboard/motorista` | não | não | sim | não |
 | `GET /dashboard/aluno` | não | não | não | sim |
@@ -680,10 +729,17 @@ O elemento Maven inválido que bloqueava a compilação foi removido. O schema a
 - `V3__administracao_segura_usuario.sql`: adiciona `usuario.ativo BOOLEAN NOT NULL DEFAULT TRUE` e `usuario.token_version BIGINT NOT NULL DEFAULT 0`, preservando as contas existentes;
 - `V4__matricula_contas_receber.sql`: torna obrigatórios os vínculos financeiros e impede recebimento duplicado e duas cobranças do mesmo aluno no mesmo vencimento;
 - `V5__chamados_manutencao.sql`: amplia a descrição para 2.000, adiciona observação administrativa, obrigatoriedade dos campos, validação de descrição não vazia e índices; mantém `responsavel_id` e as FKs existentes. Falha com mensagem clara se houver chamado legado incompleto, sem apagar registros nem inventar autor;
+- `V6__notificacoes_whatsapp.sql`: adiciona somente configuração, assinatura, lote e entrega, com automático desligado, unicidades, índices da fila e FKs CASCADE/SET NULL para preservar histórico sem impedir exclusão de acesso. Não altera datas, pessoas ou contas existentes;
 - em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica as evoluções posteriores;
 - depois das migrações, Hibernate usa `ddl-auto=validate` e falha se o mapeamento divergir do banco.
 
 Antes de executar a migração em um ambiente importante, faça backup do banco. Os registros existentes de `pessoa` não são apagados.
+
+### Configuração opcional do WhatsApp
+
+Sem WHATSAPP_ENABLED=true, não são enviados documentos; o restante da aplicação inicia normalmente sem credenciais Meta. As variáveis externas são WHATSAPP_GRAPH_API_VERSION, WHATSAPP_ACCESS_TOKEN, WHATSAPP_WABA_ID, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_NUMBER, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN e WHATSAPP_TEMPLATE_NAME. Modo de teste padrão exige WHATSAPP_TEST_ALLOWED_NUMBERS; produção é habilitada explicitamente com WHATSAPP_PRODUCTION=true. WHATSAPP_SCHEDULERS_ENABLED controla as rotinas do módulo e fica false nos testes.
+
+Requisitos para envio real: conta/número Meta, template DOCUMENT aprovado em pt_BR com três parâmetros, webhook HTTPS verificado e destinatários que confirmaram o consentimento. O guia específico detalha a configuração. Não existe provisionamento automático de conta Meta nem promessa de gratuidade.
 
 ---
 
@@ -697,7 +753,11 @@ Os testes de manutenção cobrem autoria automática e campos protegidos, permis
 
 `ManutencaoPostgresMigrationTests` é opcional, habilitado por `MANUTENCAO_TEST_DB_URL`, com usuário/senha externos em `MANUTENCAO_TEST_DB_USER` e `MANUTENCAO_TEST_DB_PASSWORD`. Valida V1–V5 em schema vazio, atualização V4→V5 com registros preservados, FKs/obrigatoriedade/limites e falha segura para chamado incompleto. Cria e remove somente schemas temporários próprios `test_manutencao_*`, sem alterar o schema público.
 
-`DashboardPostgresIntegrationTests` repete os 15 testes do dashboard contra PostgreSQL real quando `DASHBOARD_TEST_DB_URL`, `DASHBOARD_TEST_DB_USER` e `DASHBOARD_TEST_DB_PASSWORD` são informados ao processo Maven. Aplica V1–V5 e valida o schema em um schema temporário próprio `test_dashboard_*`, removido ao final. Sem essas variáveis, essa suíte é ignorada; os 15 testes H2 continuam executando. Não usa nem modifica as tabelas públicas do sistema.
+`DashboardPostgresIntegrationTests` repete os 15 testes do dashboard contra PostgreSQL real quando `DASHBOARD_TEST_DB_URL`, `DASHBOARD_TEST_DB_USER` e `DASHBOARD_TEST_DB_PASSWORD` são informados ao processo Maven. Aplica as migrations atuais e valida o schema em um schema temporário próprio `test_dashboard_*`, removido ao final. Sem essas variáveis, essa suíte é ignorada; os 15 testes H2 continuam executando. Não usa nem modifica as tabelas públicas do sistema.
+
+`WhatsappIntegrationTests` usa banco H2 próprio, relógio controlado e gateway Meta simulado. Cobre consentimento, confirmação, expiração, limite de ativações, cancelamento, número único, lista de teste, assinatura/WABA/número do webhook, permissões, agenda, snapshot, idempotência, revisões, fila/HTTP fora de transação, concorrência, conta excluída/inativa, atrasos, tentativas e estados fora de ordem. `MetaWhatsappClientTests` verifica contratos HTTP/multipart/template, media ID/correlação e classificação de falhas. `ProgramacaoPdfTests` gera exemplos em target/whatsapp-pdf e valida acentos, fonte embutida, texto longo, paginação e ausência de PDF vazio; as renderizações também foram inspecionadas visualmente.
+
+`WhatsappPostgresIntegrationTests` repete a suíte contra V1–V6 em schema temporário `test_whatsapp_*`. `WhatsappPostgresMigrationTests` testa atualização V5→V6 com contas/datas preservadas, assinatura removida na exclusão de acesso e histórico/Pessoa mantidos. Ambas são opcionais, habilitadas por WHATSAPP_TEST_DB_URL, WHATSAPP_TEST_DB_USER e WHATSAPP_TEST_DB_PASSWORD. Nenhuma suíte usa a Meta real ou altera tabelas públicas.
 
 O `RestExceptionHandler` padroniza as falhas de autenticação, validação, formato inválido, inexistência, conflito e integridade com `ProblemDetail`. `ViagemController` e `GradeDiariaController` mantêm handlers locais legados para `RuntimeException`, mas possuem handlers específicos `409/404` para atribuição de ônibus. Recibos continuam retornando `404` por `ResponseEntity` quando não encontrados.
 
@@ -725,12 +785,15 @@ O `RestExceptionHandler` padroniza as falhas de autenticação, validação, for
 18. Datas legadas de viagem continuam nos contratos antigos por compatibilidade; somente a grade/dia determina a agenda do dashboard.
 19. O dashboard mostra transporte da faculdade, não uma atribuição individual de ônibus ou ponto ao aluno; não há horários ou rastreamento.
 20. Dashboards de transporte retornam todas as atribuições pertinentes, sem paginação de servidor; bases grandes podem exigir paginação futura.
+21. WhatsApp depende de configuração/aprovação da Meta, webhook público HTTPS e custos/regras da plataforma; testes locais não comprovam entrega real.
+22. A fila prioriza evitar duplicidade: resultado incerto exige verificação administrativa, sem promessa de entrega exatamente uma vez.
+23. Histórico de WhatsApp mantém snapshots e PDFs no banco; não há política automática de retenção/remoção nesta versão.
 
 ---
 
 ## 14. Estado da revisão
 
-- **Última revisão:** 10 de outubro de 2026
+- **Última revisão:** 14 de outubro de 2026
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
 - **Status:** em desenvolvimento
 - **Fonte:** implementação atual do repositório

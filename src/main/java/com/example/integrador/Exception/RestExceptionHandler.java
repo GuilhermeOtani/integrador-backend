@@ -17,7 +17,18 @@ import java.util.Map;
 @RestControllerAdvice
 public class RestExceptionHandler {
 
-    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ProblemDetail statusExplicito(org.springframework.web.server.ResponseStatusException exception) {
+        return ProblemDetail.forStatusAndDetail(exception.getStatusCode(), exception.getReason() == null ? "Requisição inválida" : exception.getReason());
+    }
+
+    @ExceptionHandler(IntegracaoIndisponivelException.class)
+    public ProblemDetail integracaoIndisponivel(IntegracaoIndisponivelException exception) {
+        return problema(HttpStatus.SERVICE_UNAVAILABLE, "Integração indisponível", exception.getMessage());
+    }
+
+    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
     public ProblemDetail formatoInvalido(Exception exception) {
         return problema(HttpStatus.BAD_REQUEST, "Requisição inválida", "JSON, identificador ou enum inválido");
     }
