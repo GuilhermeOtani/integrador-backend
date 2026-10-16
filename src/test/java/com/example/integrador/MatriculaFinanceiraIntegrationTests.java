@@ -102,7 +102,7 @@ class MatriculaFinanceiraIntegrationTests {
 
         assertThat(contaReceberRepository.findById(conta.getId()).orElseThrow().getStatus())
                 .isEqualTo(StatusFinanceiro.PAGO);
-        assertThat(recebimentoRepository.findByContaReceberId(conta.getId())).isPresent();
+        assertThat(recebimentoRepository.findFirstByContaReceberIdOrderByDataRecebimentoDescIdDesc(conta.getId())).isPresent();
         assertThat(alunoRepository.findById(aluno.getId()).orElseThrow().getStatusMatricula())
                 .isEqualTo(StatusMatricula.ATIV0);
 
@@ -130,6 +130,7 @@ class MatriculaFinanceiraIntegrationTests {
         ContaReceber primeira = contaReceberRepository
                 .findTopByAlunoIdOrderByDataVencimentoDesc(aluno.getId());
         primeira.setDataVencimento(LocalDate.now());
+        primeira.setDiaVencimentoRecorrencia(LocalDate.now().getDayOfMonth());
         contaReceberRepository.saveAndFlush(primeira);
 
         rotinaFinanceiraService.gerarContasRecorrentes();
@@ -137,7 +138,7 @@ class MatriculaFinanceiraIntegrationTests {
         List<ContaReceber> contas = contaReceberRepository
                 .findAllByAlunoIdOrderByDataVencimentoDesc(aluno.getId());
         assertThat(contas).hasSize(2);
-        assertThat(contas.getFirst().getDataVencimento()).isEqualTo(LocalDate.now().plusDays(30));
+        assertThat(contas.getFirst().getDataVencimento()).isEqualTo(LocalDate.now().plusMonths(1));
         assertThat(contas.getFirst().getValor()).isEqualByComparingTo("180.00");
         assertThat(contas.getFirst().getStatus()).isEqualTo(StatusFinanceiro.PENDENTE);
 

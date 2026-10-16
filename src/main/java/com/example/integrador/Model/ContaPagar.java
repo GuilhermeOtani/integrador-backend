@@ -1,6 +1,7 @@
 package com.example.integrador.Model;
 
 import com.example.integrador.Enum.StatusFinanceiro;
+import com.example.integrador.Enum.ClassificacaoConta;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -28,5 +29,14 @@ public class ContaPagar {
     @ManyToOne
     @JoinColumn(name = "pessoa_id")
     private Pessoa motorista;
+
+    /** Primeiro dia do mês; o contrato HTTP usa yyyy-MM. */
+    private LocalDate competencia;
+
+    @Enumerated(EnumType.STRING)
+    private ClassificacaoConta classificacao;
+
+    /** Dia original, preservado mesmo quando fevereiro encurta o vencimento. */
+    private Integer diaVencimentoSalario;
 
 }

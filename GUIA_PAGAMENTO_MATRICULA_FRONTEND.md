@@ -1,5 +1,7 @@
 # Guia de implementação do pagamento de matrícula no frontend
 
+> Atualização de 16/10/2026: o contrato atual de parcelas, saldos, idempotência, competência e recorrência mensal está em **GUIA_CONTAS_RECEBER_FRONTEND.md**. As regras de pagamento exclusivamente integral e intervalos fixos de 30 dias descritas abaixo são a versão anterior.
+
 Este guia descreve as mudanças necessárias no frontend Angular 21 standalone. O backend já gera cobranças mensais em `conta_receber`, permite que o ALUNO consulte somente as próprias cobranças e registra o pagamento em `recebimento`.
 
 ## 1. Fluxo implementado no backend

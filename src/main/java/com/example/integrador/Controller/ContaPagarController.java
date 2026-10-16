@@ -1,6 +1,7 @@
 package com.example.integrador.Controller;
 
-import com.example.integrador.Model.ContaPagar;
+import com.example.integrador.DTO.ContaPagarRequest;
+import com.example.integrador.DTO.ContaPagarResponse;
 import com.example.integrador.Service.ContaPagarService;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,18 +18,18 @@ public class ContaPagarController {
     }
 
     @GetMapping("/listar")
-    public List<ContaPagar> listarTodasContaPagar() {
-        return contaPagarService.listarTodasContaPagar();
+    public List<ContaPagarResponse> listarTodasContaPagar() {
+        return contaPagarService.listarRespostas();
     }
 
     @PostMapping("/salvar-contapagar")
-    public ContaPagar salvarContaPagar(@RequestBody ContaPagar contaPagar) {
-        return contaPagarService.salvarContaPagar(contaPagar);
+    public ContaPagarResponse salvarContaPagar(@RequestBody ContaPagarRequest contaPagar) {
+        return contaPagarService.salvarResposta(contaPagar.toEntity());
     }
 
     @GetMapping("/buscar-contapagar/{id}")
-    public ContaPagar buscarContaPagarPorId(@PathVariable Long id) {
-        return contaPagarService.buscarContaPagarPorId(id);
+    public ContaPagarResponse buscarContaPagarPorId(@PathVariable Long id) {
+        return contaPagarService.buscarResposta(id);
     }
 
     @DeleteMapping("/deletar-contapagar/{id}")
@@ -37,7 +38,7 @@ public class ContaPagarController {
     }
 
     @PutMapping("/atualizar-contapagar/{id}")
-    public ContaPagar atualizarContaPagar(@PathVariable Long id, @RequestBody ContaPagar contaPagar) {
-        return contaPagarService.atualizarContaPagar(id, contaPagar);
+    public ContaPagarResponse atualizarContaPagar(@PathVariable Long id, @RequestBody ContaPagarRequest contaPagar) {
+        return contaPagarService.atualizarResposta(id, contaPagar.toEntity());
     }
 }

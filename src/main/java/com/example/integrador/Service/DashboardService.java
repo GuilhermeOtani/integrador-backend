@@ -30,15 +30,18 @@ public class DashboardService {
     private final ContaReceberRepository contasReceber;
     private final UsuarioRepository usuarios;
     private final Clock clock;
+    private final com.example.integrador.Repository.PosicaoContaReceberRepository posicoesReceber;
     private final AgendaTransporteService agenda;
 
     public DashboardService(DashboardConsultasRepository consultas, ContaReceberRepository contasReceber,
-                            UsuarioRepository usuarios, Clock clock, AgendaTransporteService agenda) {
+                            UsuarioRepository usuarios, Clock clock, AgendaTransporteService agenda,
+                            com.example.integrador.Repository.PosicaoContaReceberRepository posicoesReceber) {
         this.consultas = consultas;
         this.contasReceber = contasReceber;
         this.usuarios = usuarios;
         this.clock = clock;
         this.agenda = agenda;
+        this.posicoesReceber = posicoesReceber;
     }
 
     @PreAuthorize("hasRole('ALUNO')")
@@ -99,22 +102,31 @@ public class DashboardService {
 
     private FinanceiroAluno financeiroAluno(Aluno aluno, LocalDate hoje) {
         var contas = contasReceber.findAllByAlunoIdOrderByDataVencimentoDesc(aluno.getId());
-        var abertas = contas.stream().filter(c -> c.getStatus() != StatusFinanceiro.PAGO).toList();
+        var saldos = posicoesReceber.calcular(contas);
+        var abertas = contas.stream().filter(c -> saldos.get(c.getId()).saldoRestante().signum() > 0
+                || c.getValor() == null && c.getStatus() != StatusFinanceiro.PAGO).toList();
         var vencidas = abertas.stream().filter(c -> c.getDataVencimento() != null && c.getDataVencimento().isBefore(hoje)).toList();
         Comparator<ContaReceber> ordem = Comparator.comparing(ContaReceber::getDataVencimento,
                 Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(ContaReceber::getId);
         ContaReceber principal = abertas.stream().min(ordem).orElseGet(() -> contas.stream()
                 .max(Comparator.comparing(ContaReceber::getDataVencimento,
                         Comparator.nullsFirst(Comparator.naturalOrder())).thenComparing(ContaReceber::getId)).orElse(null));
-        return new FinanceiroAluno(aluno.getMensalidade(), principal == null ? null : new CobrancaResumo(
-                principal.getId(), principal.getDescricao(), principal.getValor(), principal.getDataVencimento(),
-                principal.getStatus(), situacao(principal.getStatus(), principal.getDataVencimento(), hoje),
-                principal.getStatus() == StatusFinanceiro.PAGO || principal.getDataVencimento() == null ? null
-                        : ChronoUnit.DAYS.between(hoje, principal.getDataVencimento())), total(abertas), total(vencidas));
+        CobrancaResumo resumo = null;
+        if (principal != null) {
+            var p = saldos.get(principal.getId());
+            StatusFinanceiro status = principal.getStatus();
+            if (p.saldoRestante().signum() > 0 && status == StatusFinanceiro.PAGO) status = StatusFinanceiro.PENDENTE;
+            resumo = new CobrancaResumo(principal.getId(), principal.getDescricao(), principal.getValor(), principal.getDataVencimento(),
+                    status, situacao(status, principal.getDataVencimento(), hoje),
+                    status == StatusFinanceiro.PAGO || principal.getDataVencimento() == null ? null : ChronoUnit.DAYS.between(hoje, principal.getDataVencimento()),
+                    principal.getCompetencia() == null ? null : YearMonth.from(principal.getCompetencia()).toString(),
+                    p.valorRecebido(), p.saldoRestante(), p.recebimentoParcial(), p.avisos());
+        }
+        return new FinanceiroAluno(aluno.getMensalidade(), resumo, total(abertas, saldos), total(vencidas, saldos));
     }
 
-    private TotalFinanceiro total(List<ContaReceber> contas) {
-        return new TotalFinanceiro(contas.size(), contas.stream().map(ContaReceber::getValor).filter(Objects::nonNull)
+    private TotalFinanceiro total(List<ContaReceber> contas, Map<Long, com.example.integrador.DTO.PosicaoContaReceber> saldos) {
+        return new TotalFinanceiro(contas.size(), contas.stream().map(c -> saldos.get(c.getId()).saldoRestante())
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 

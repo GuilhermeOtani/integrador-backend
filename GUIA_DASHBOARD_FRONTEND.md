@@ -1,5 +1,7 @@
 # Dashboard por papel — guia de implementação no Angular
 
+> Atualização de 16/10/2026: cobranças do aluno agora incluem competência, valorRecebido, saldoRestante, recebimentoParcial e avisos. Totais financeiros de contas a receber usam saldo restante. Atualize o componente compartilhado de pagamento conforme **GUIA_CONTAS_RECEBER_FRONTEND.md**; os campos originais permanecem.
+
 Referência: backend implementado em 10/10/2026. Este arquivo orienta a próxima entrega do frontend; nenhum arquivo Angular foi alterado nesta entrega.
 
 ## 1. Antes de começar

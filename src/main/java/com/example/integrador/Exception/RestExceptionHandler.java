@@ -17,6 +17,21 @@ import java.util.Map;
 @RestControllerAdvice
 public class RestExceptionHandler {
 
+    @ExceptionHandler(GeracaoRelatorioException.class)
+    public ProblemDetail geracaoRelatorio(GeracaoRelatorioException exception) {
+        return problema(HttpStatus.INTERNAL_SERVER_ERROR, "Falha ao gerar relatório", exception.getMessage());
+    }
+
+    @ExceptionHandler({org.springframework.orm.ObjectOptimisticLockingFailureException.class, jakarta.persistence.OptimisticLockException.class})
+    public ProblemDetail versaoDesatualizada(Exception exception) {
+        return problema(HttpStatus.CONFLICT, "Conflito", "O registro foi atualizado. Recarregue antes de salvar.");
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ProblemDetail parametroAusente(Exception exception) {
+        return problema(HttpStatus.BAD_REQUEST, "Requisição inválida", "Informe todos os parâmetros obrigatórios.");
+    }
+
     @ExceptionHandler(ExclusaoAlunoBloqueadaException.class)
     public ProblemDetail exclusaoAluno(ExclusaoAlunoBloqueadaException exception) {
         ProblemDetail problema = problema(HttpStatus.CONFLICT, "Exclusão bloqueada", exception.getMessage());

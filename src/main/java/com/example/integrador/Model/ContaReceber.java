@@ -2,11 +2,15 @@ package com.example.integrador.Model;
 
 import com.example.integrador.Enum.StatusFinanceiro;
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
+@Getter
+@Setter
 public class ContaReceber {
 
     @Id
@@ -25,6 +29,9 @@ public class ContaReceber {
     @ManyToOne(optional = false)
     @JoinColumn(name = "aluno_id", nullable = false)
     private Aluno aluno;
+
+    private LocalDate competencia;
+    private Integer diaVencimentoRecorrencia;
 
     public String getDescricao() {
         return descricao;

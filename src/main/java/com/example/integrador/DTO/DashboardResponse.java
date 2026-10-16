@@ -45,7 +45,8 @@ public final class DashboardResponse {
     public enum SituacaoCobranca { PAGO, VENCIDA, VENCE_HOJE, A_VENCER, SEM_VENCIMENTO }
     public record CobrancaResumo(Long id, String descricao, BigDecimal valor,
             LocalDate dataVencimento, StatusFinanceiro status, SituacaoCobranca situacao,
-            Long diasParaVencimento) {}
+            Long diasParaVencimento, String competencia, BigDecimal valorRecebido,
+            BigDecimal saldoRestante, boolean recebimentoParcial, List<String> avisos) {}
     public record TotalFinanceiro(long quantidade, BigDecimal valor) {}
     public record FinanceiroAluno(BigDecimal mensalidadeCadastro, CobrancaResumo cobrancaPrincipal,
             TotalFinanceiro emAberto, TotalFinanceiro vencidas) {}

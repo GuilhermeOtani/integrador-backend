@@ -1,0 +1,109 @@
+<?xml version='1.0' encoding='utf-8'?>
+<jasperReport name="inadimplencia" language="java" pageWidth="595" pageHeight="842" columnWidth="531" leftMargin="32" rightMargin="32" topMargin="24" bottomMargin="24" whenNoDataType="AllSectionsNoDetail" uuid="eb0a7dd4-afbc-4cbf-a740-950fb3f9dd01">
+    <style name="Base" default="true" fontName="DejaVu Sans" fontSize="8.5" forecolor="#1E293B" />
+    <style name="Linha" mode="Opaque" backcolor="#FFFFFF">
+        <conditionalStyle backcolor="#F1F5F9">
+            <conditionExpression>$V{REPORT_COUNT} % 2 == 0</conditionExpression>
+        </conditionalStyle>
+    </style>
+    <parameter name="TITULO" class="java.lang.String" />
+    <parameter name="FILTROS" class="java.lang.String" />
+    <parameter name="EMISSAO" class="java.lang.String" />
+    <parameter name="RESUMO" class="java.lang.String" />
+    <parameter name="AVISOS" class="java.lang.String" />
+    <field name="grupo" class="java.lang.String" />
+    <field name="grupoDetalhe" class="java.lang.String" />
+    <field name="subtotal" class="java.lang.String" />
+    <field name="coluna1" class="java.lang.String" />
+    <field name="coluna2" class="java.lang.String" />
+    <field name="coluna3" class="java.lang.String" />
+    <field name="coluna4" class="java.lang.String" />
+    <group name="Pessoa" reprintHeaderOnEachPage="true" minHeightToStartNewPage="95">
+        <expression>$F{grupo}</expression>
+        <groupHeader>
+            <band height="51" splitType="Stretch">
+                <element kind="textField" uuid="a481c672-6c63-4558-bf5c-27c832b09066" x="0" y="8" width="531" height="20" fontSize="11" bold="true" forecolor="#065F46" textAdjust="StretchHeight">
+                    <expression>$F{grupo}</expression>
+                </element>
+                <element kind="textField" uuid="b4a2bcc3-b029-4ba2-9d9f-289a1cd8c429" x="0" y="30" width="531" height="17" fontSize="8" forecolor="#64748B" textAdjust="StretchHeight">
+                    <expression>$F{grupoDetalhe}</expression>
+                </element>
+            </band>
+        </groupHeader>
+        <groupFooter>
+            <band height="32">
+                <element kind="textField" uuid="61c59534-8f25-4f64-a89b-f212e8428954" x="0" y="8" width="531" height="20" hTextAlign="Right" bold="true" forecolor="#065F46">
+                    <expression>$F{subtotal}</expression>
+                </element>
+            </band>
+        </groupFooter>
+    </group>
+    <pageHeader height="130">
+        <element kind="staticText" uuid="c720f43d-a461-43cb-91ab-c63874dee067" x="0" y="0" width="200" height="21" fontSize="16" bold="true" forecolor="#047857">
+            <text>BusSystem</text>
+        </element>
+        <element kind="textField" uuid="ffffbeb3-4154-45bf-8d29-447dc44d32a7" x="286" y="3" width="245" height="16" hTextAlign="Right" fontSize="7.5" forecolor="#64748B">
+            <expression>$P{EMISSAO}</expression>
+        </element>
+        <element kind="textField" uuid="ee5173f2-2ff7-4faf-a0ec-c344cfe6f158" x="0" y="30" width="531" height="30" fontSize="20" bold="true" forecolor="#064E3B">
+            <expression>$P{TITULO}</expression>
+        </element>
+        <element kind="textField" uuid="0083240c-f202-4990-b3ea-7136771344d4" x="0" y="65" width="531" height="24" fontSize="8" textAdjust="StretchHeight" forecolor="#475569">
+            <expression>$P{FILTROS}</expression>
+        </element>
+        <element kind="textField" uuid="b034c637-092f-4c3f-bfe1-fb35646adffb" x="0" y="98" width="531" height="27" fontSize="9" bold="true" forecolor="#065F46" backcolor="#ECFDF5" mode="Opaque" vTextAlign="Middle">
+            <expression>$P{RESUMO}</expression>
+        </element>
+    </pageHeader>
+    <columnHeader height="27">
+        <element uuid="00afea3b-0a72-465d-9e8a-35c08c291b5b" x="0" width="247" hTextAlign="Left" kind="staticText" y="0" height="25" bold="true" forecolor="#FFFFFF" backcolor="#047857" mode="Opaque" vTextAlign="Middle">
+            <text>Cobrança / descrição</text>
+            <box leftPadding="6" rightPadding="6" />
+        </element>
+        <element uuid="03d0ef65-3bd3-4442-85ae-b4c1286e9708" x="247" width="86" hTextAlign="Right" kind="staticText" y="0" height="25" bold="true" forecolor="#FFFFFF" backcolor="#047857" mode="Opaque" vTextAlign="Middle">
+            <text>Vencimento</text>
+            <box leftPadding="6" rightPadding="6" />
+        </element>
+        <element uuid="afce7d5d-53d1-446b-817a-5588446e6d92" x="333" width="58" hTextAlign="Right" kind="staticText" y="0" height="25" bold="true" forecolor="#FFFFFF" backcolor="#047857" mode="Opaque" vTextAlign="Middle">
+            <text>Atraso</text>
+            <box leftPadding="6" rightPadding="6" />
+        </element>
+        <element uuid="ab57fd4f-0556-4384-b81b-916ff1ae091b" x="391" width="140" hTextAlign="Right" kind="staticText" y="0" height="25" bold="true" forecolor="#FFFFFF" backcolor="#047857" mode="Opaque" vTextAlign="Middle">
+            <text>Em aberto</text>
+            <box leftPadding="6" rightPadding="6" />
+        </element>
+    </columnHeader>
+    <detail>
+        <band height="36" splitType="Stretch">
+            <element uuid="21ff8103-79ac-435c-9ef8-8c7e0baf627b" x="0" width="247" hTextAlign="Left" kind="textField" y="4" height="28" style="Linha" textAdjust="StretchHeight" stretchType="ContainerHeight">
+                <expression>$F{coluna1}</expression>
+                <box leftPadding="6" rightPadding="6" topPadding="4" bottomPadding="4" />
+            </element>
+            <element uuid="6e8aa449-1d48-4bb5-916c-a728445447da" x="247" width="86" hTextAlign="Right" kind="textField" y="4" height="28" style="Linha" textAdjust="StretchHeight" stretchType="ContainerHeight">
+                <expression>$F{coluna2}</expression>
+                <box leftPadding="6" rightPadding="6" topPadding="4" bottomPadding="4" />
+            </element>
+            <element uuid="10c769a5-c935-4a49-b42f-b96e9245ee5b" x="333" width="58" hTextAlign="Right" kind="textField" y="4" height="28" style="Linha" textAdjust="StretchHeight" stretchType="ContainerHeight">
+                <expression>$F{coluna3}</expression>
+                <box leftPadding="6" rightPadding="6" topPadding="4" bottomPadding="4" />
+            </element>
+            <element uuid="65b48fe6-5797-4cc8-a7e7-98ed8a170b19" x="391" width="140" hTextAlign="Right" kind="textField" y="4" height="28" style="Linha" textAdjust="StretchHeight" stretchType="ContainerHeight">
+                <expression>$F{coluna4}</expression>
+                <box leftPadding="6" rightPadding="6" topPadding="4" bottomPadding="4" />
+            </element>
+        </band>
+    </detail>
+    <pageFooter height="25">
+        <element kind="staticText" uuid="a25b23b0-5291-4a6b-a91f-73e41d32eb4c" x="0" y="7" width="411" height="14" fontSize="7" forecolor="#64748B">
+            <text>BusSystem | Financeiro</text>
+        </element>
+        <element kind="textField" uuid="0a6acf7e-d155-4720-b2ba-41db14db65d6" x="411" y="7" width="120" height="14" fontSize="7" forecolor="#64748B" hTextAlign="Right">
+            <expression>"Página " + $V{PAGE_NUMBER}</expression>
+        </element>
+    </pageFooter>
+    <summary height="30" splitType="Stretch">
+        <element kind="textField" uuid="f9de3ce6-3069-412f-97b7-e355b69af067" x="0" y="4" width="531" height="24" fontSize="8" forecolor="#92400E" textAdjust="StretchHeight">
+            <expression>$P{AVISOS}</expression>
+        </element>
+    </summary>
+</jasperReport>

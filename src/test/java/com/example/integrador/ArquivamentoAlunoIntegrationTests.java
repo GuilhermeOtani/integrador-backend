@@ -330,6 +330,7 @@ class ArquivamentoAlunoIntegrationTests {
                     """.formatted(id)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id));
         assertThat(contar("ContaPagar")).isEqualTo(1);
+        SecurityContextHolder.getContext().setAuthentication(converter.convert(decoder.decode(adminToken.substring(7))));
         assertThat(pagamentos.realizarPagamento(id, FormaPagamento.PIX, null).getValor()).isEqualByComparingTo("180");
         mvc.perform(get("/pagamentos/recibo/conta/" + id).header("Authorization", adminToken))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.nomeMotorista").value(org.hamcrest.Matchers.nullValue()));
@@ -365,14 +366,16 @@ class ArquivamentoAlunoIntegrationTests {
         assertThatThrownBy(() -> contasPagar.atualizarContaPagar(Long.MAX_VALUE, entrada)).isInstanceOf(RecursoNaoEncontradoException.class);
     }
 
-    @Test void salarioDoMotoristaMantemRecorrenciaPagamentoEReciboAposArquivarAluno() {
-        LocalDate vencimento = LocalDate.now().minusDays(1);
+    @Test void salarioDoMotoristaMantemRecorrenciaMensalPagamentoEReciboAposArquivarAluno() {
+        LocalDate vencimento = LocalDate.of(2026, 10, 11);
         BigDecimal salario = new BigDecimal("1500");
         Long primeira = tx.execute(s -> {
-            Motorista cadastrado = em.find(Motorista.class, motorista.getId()); cadastrado.setSalario(salario);
+            Motorista cadastrado = em.find(Motorista.class, motorista.getId()); cadastrado.setSalario(salario); em.flush();
             contasPagar.gerarPrimeiraConta(cadastrado);
             ContaPagar conta = em.createQuery("select c from ContaPagar c", ContaPagar.class).getSingleResult();
             conta.setDataVencimento(vencimento);
+            conta.setCompetencia(vencimento.withDayOfMonth(1));
+            conta.setDiaVencimentoSalario(vencimento.getDayOfMonth());
             return conta.getId();
         });
         alunos.arquivarAluno(aluno.getId(), true);
@@ -382,7 +385,7 @@ class ArquivamentoAlunoIntegrationTests {
             var contas = em.createQuery("select c from ContaPagar c where c.motorista.id = :id order by c.dataVencimento", ContaPagar.class)
                     .setParameter("id", motorista.getId()).getResultList();
             assertThat(contas).hasSize(2).allSatisfy(c -> assertThat(c.getValor()).isEqualByComparingTo(salario));
-            assertThat(contas.getLast().getDataVencimento()).isEqualTo(vencimento.plusDays(30));
+            assertThat(contas.getLast().getDataVencimento()).isEqualTo(vencimento.plusMonths(1));
         });
         var pagamento = pagamentos.realizarPagamento(primeira, FormaPagamento.PIX, null);
         assertThat(pagamento.getValor()).isEqualByComparingTo(salario);

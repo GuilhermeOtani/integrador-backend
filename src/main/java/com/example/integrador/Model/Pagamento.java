@@ -2,6 +2,7 @@ package com.example.integrador.Model;
 
 import com.example.integrador.Enum.FormaPagamento;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -29,5 +30,12 @@ public class Pagamento {
     @JoinColumn(name = "conta_pagar_id")
     @JsonIgnoreProperties({"pagamentos", "motorista"})
     private ContaPagar contaPagar;
+
+    @JsonIgnore
+    @Column(length = 36, unique = true)
+    private String chaveIdempotencia;
+
+    @JsonIgnore
+    private String requisicaoIdempotencia;
     }
 

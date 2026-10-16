@@ -1,92 +1,85 @@
 package com.example.integrador.Service;
 
 import com.example.integrador.DTO.RecebimentoResponse;
-import com.example.integrador.Enum.FormaPagamento;
-import com.example.integrador.Enum.StatusFinanceiro;
-import com.example.integrador.Enum.StatusMatricula;
-import com.example.integrador.Exception.ConflitoException;
-import com.example.integrador.Exception.RecursoNaoEncontradoException;
-import com.example.integrador.Model.ContaReceber;
-import com.example.integrador.Model.Recebimento;
-import com.example.integrador.Repository.AlunoRepository;
-import com.example.integrador.Repository.ContaReceberRepository;
-import com.example.integrador.Repository.RecebimentoRepository;
+import com.example.integrador.Enum.*;
+import com.example.integrador.Exception.*;
+import com.example.integrador.Model.*;
+import com.example.integrador.Repository.*;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
+import java.time.*;
+import java.util.*;
 
 @Service
+@PreAuthorize("hasRole('ALUNO')")
 public class RecebimentoService {
-    private final RecebimentoRepository recebimentoRepository;
-    private final ContaReceberRepository contaReceberRepository;
-    private final AlunoRepository alunoRepository;
+    private final RecebimentoRepository recebimentos;
+    private final ContaReceberRepository contas;
     private final PessoaBloqueioService bloqueios;
     private final EntityManager em;
-
-    public RecebimentoService(RecebimentoRepository recebimentoRepository,
-                              ContaReceberRepository contaReceberRepository,
-                              AlunoRepository alunoRepository, PessoaBloqueioService bloqueios, EntityManager em) {
-        this.recebimentoRepository = recebimentoRepository;
-        this.contaReceberRepository = contaReceberRepository;
-        this.alunoRepository = alunoRepository;
-        this.bloqueios = bloqueios;
-        this.em = em;
+    private final Clock clock;
+    public RecebimentoService(RecebimentoRepository recebimentos, ContaReceberRepository contas,
+                             PessoaBloqueioService bloqueios, EntityManager em, Clock clock) {
+        this.recebimentos = recebimentos; this.contas = contas; this.bloqueios = bloqueios; this.em = em; this.clock = clock;
     }
-
     @Transactional
-    @PreAuthorize("hasRole('ALUNO')")
-    public RecebimentoResponse realizarPagamento(Long contaId, FormaPagamento formaPagamento,
-                                                  Long alunoAutenticadoId) {
-        Long proprietario = contaReceberRepository.findAlunoIdById(contaId)
-                .filter(id -> id.equals(alunoAutenticadoId))
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Matrícula não encontrada."));
-        var aluno = bloqueios.bloquearAluno(proprietario);
-        bloqueios.exigirNaoArquivado(aluno);
-        ContaReceber conta = contaReceberRepository.findLockedById(contaId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException(
-                        "Matrícula de ID " + contaId + " não encontrada"));
-        em.refresh(conta, LockModeType.PESSIMISTIC_WRITE);
-        validarProprietario(conta, alunoAutenticadoId);
-
-        if (conta.getStatus() == StatusFinanceiro.PAGO
-                || recebimentoRepository.existsByContaReceberId(contaId)) {
-            throw new ConflitoException("Esta matrícula já foi paga");
-        }
-
-        Recebimento recebimento = new Recebimento();
-        recebimento.setContaReceber(conta);
-        recebimento.setDataRecebimento(LocalDate.now());
-        recebimento.setFormaPagamento(formaPagamento);
-        recebimento.setValor(conta.getValor());
-        Recebimento salvo = recebimentoRepository.save(recebimento);
-
-        conta.setStatus(StatusFinanceiro.PAGO);
-        contaReceberRepository.save(conta);
-
-        aluno.setStatusMatricula(StatusMatricula.ATIV0);
-        alunoRepository.save(aluno);
-
-        return RecebimentoResponse.fromEntity(salvo);
+    public RecebimentoResponse realizarPagamento(Long contaId, FormaPagamento forma, Long alunoId) {
+        return realizarPagamento(contaId, forma, alunoId, null, null);
     }
-
+    @Transactional
+    public RecebimentoResponse realizarPagamento(Long contaId, FormaPagamento forma, Long alunoId, BigDecimal valor, String chave) {
+        Long proprietario = contas.findAlunoIdById(contaId).filter(id->id.equals(alunoId))
+                .orElseThrow(()->new RecursoNaoEncontradoException("Matrícula não encontrada."));
+        Aluno aluno = bloqueios.bloquearAluno(proprietario); bloqueios.exigirNaoArquivado(aluno);
+        ContaReceber conta = contas.findLockedById(contaId).orElseThrow(()->new RecursoNaoEncontradoException("Matrícula não encontrada."));
+        em.refresh(conta, LockModeType.PESSIMISTIC_WRITE); validarProprietario(conta, alunoId);
+        if (forma == null) throw new RegraNegocioException("Informe a forma de pagamento.");
+        if (valor != null && (valor.signum() <= 0 || valor.stripTrailingZeros().scale()>2)) throw new RegraNegocioException("O pagamento deve ser positivo, com até duas casas decimais.");
+        if (chave != null) {
+            try { if (!UUID.fromString(chave).toString().equals(chave)) throw new IllegalArgumentException(); }
+            catch (IllegalArgumentException e) { throw new RegraNegocioException("Idempotency-Key deve ser um UUID em minúsculas."); }
+        }
+        String requisicao = contaId+"|"+forma+"|"+(valor == null?"RESTANTE":valor.stripTrailingZeros().toPlainString());
+        if (chave != null) {
+            var anterior = recebimentos.findByChaveIdempotencia(chave);
+            if (anterior.isPresent()) {
+                if (!requisicao.equals(anterior.get().getRequisicaoIdempotencia())) throw new ConflitoException("Chave de idempotência já utilizada em outro recebimento.");
+                return RecebimentoResponse.fromEntity(anterior.get());
+            }
+        }
+        if (conta.getValor() == null || conta.getValor().signum() <= 0) throw new RegraNegocioException("Regularize o valor da cobrança antes de pagar.");
+        BigDecimal recebido = recebimentos.totalRecebido(contaId), saldo = conta.getValor().subtract(recebido);
+        boolean quitacaoLegada = conta.getStatus() == StatusFinanceiro.PAGO && !recebimentos.existsByContaReceberId(contaId);
+        if (quitacaoLegada || saldo.signum() <= 0) throw new ConflitoException("Esta matrícula já foi paga.");
+        if (recebido.signum()<0) throw new ConflitoException("Regularize os recebimentos negativos legados antes de pagar.");
+        BigDecimal efetivo = valor == null?saldo:valor;
+        if (efetivo.compareTo(saldo)>0) throw new RegraNegocioException("O pagamento não pode ultrapassar o saldo restante.");
+        Recebimento r = new Recebimento(); r.setContaReceber(conta); r.setValor(efetivo); r.setFormaPagamento(forma);
+        r.setDataRecebimento(LocalDate.now(clock)); r.setChaveIdempotencia(chave); r.setRequisicaoIdempotencia(chave == null?null:requisicao);
+        recebimentos.saveAndFlush(r);
+        boolean quitou = efetivo.compareTo(saldo) == 0;
+        conta.setStatus(quitou?StatusFinanceiro.PAGO:StatusFinanceiro.PENDENTE);
+        if (quitou) aluno.setStatusMatricula(StatusMatricula.ATIV0);
+        return RecebimentoResponse.fromEntity(r);
+    }
     @Transactional(readOnly = true)
-    @PreAuthorize("hasRole('ALUNO')")
-    public RecebimentoResponse buscarRecibo(Long contaId, Long alunoAutenticadoId) {
-        Recebimento recebimento = recebimentoRepository.findByContaReceberId(contaId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException(
-                        "Recibo da matrícula de ID " + contaId + " não encontrado"));
-        validarProprietario(recebimento.getContaReceber(), alunoAutenticadoId);
-        return RecebimentoResponse.fromEntity(recebimento);
+    public RecebimentoResponse buscarRecibo(Long contaId, Long alunoId) {
+        ContaReceber conta = contas.findById(contaId).orElseThrow(()->new RecursoNaoEncontradoException("Matrícula não encontrada."));
+        validarProprietario(conta, alunoId);
+        return recebimentos.findFirstByContaReceberIdOrderByDataRecebimentoDescIdDesc(contaId).map(RecebimentoResponse::fromEntity)
+                .orElseThrow(()->new RecursoNaoEncontradoException("Recibo da matrícula não encontrado."));
     }
-
-    private void validarProprietario(ContaReceber conta, Long alunoAutenticadoId) {
-        if (!conta.getAluno().getId().equals(alunoAutenticadoId)) {
-            throw new RecursoNaoEncontradoException(
-                    "Matrícula de ID " + conta.getId() + " não encontrada");
-        }
+    @Transactional(readOnly = true)
+    public List<RecebimentoResponse> listarPorConta(Long contaId, Long alunoId) {
+        ContaReceber conta = contas.findById(contaId).orElseThrow(()->new RecursoNaoEncontradoException("Matrícula não encontrada."));
+        validarProprietario(conta, alunoId);
+        return recebimentos.findAllByContaReceberIdOrderByDataRecebimentoDescIdDesc(contaId).stream().map(RecebimentoResponse::fromEntity).toList();
+    }
+    private void validarProprietario(ContaReceber conta, Long alunoId) {
+        if (!conta.getAluno().getId().equals(alunoId)) throw new RecursoNaoEncontradoException("Matrícula não encontrada.");
     }
 }

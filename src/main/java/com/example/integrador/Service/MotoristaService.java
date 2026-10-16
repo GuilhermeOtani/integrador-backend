@@ -30,6 +30,7 @@ public class MotoristaService {
         return motoristaRepository.findAll();
     }
 
+    @Transactional
     public Motorista salvarMotorista(MotoristaDTO dto) {
         Motorista motorista = new Motorista();
         BeanUtils.copyProperties(dto, motorista, "id");

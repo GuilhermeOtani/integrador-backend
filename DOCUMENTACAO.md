@@ -566,31 +566,29 @@ Não há controller para `Pessoa`. Conta a receber, recebimento e chamado de man
 
 Ao cadastrar um motorista pela API, `MotoristaService` salva o motorista e cria uma `ContaPagar` com descrição `Salário - <nome>`, o salário como valor, vencimento em 30 dias e status `PENDENTE`.
 
-Não há transação envolvendo explicitamente as duas gravações. Uma falha ao criar a conta pode ocorrer depois de o motorista ter sido salvo.
+Desde a entrega de relatórios, cadastro do motorista e primeira conta salarial são gravados na mesma transação. A conta recebe classificação SALARIO, competência inicial pelo mês do vencimento e o dia de vencimento original.
 
 ### 8.2 Geração recorrente de contas
 
 `RotinaFinanceiraService` executa diariamente às **02:00**, pelo cron `0 0 2 * * *`.
 
-Para cada motorista, procura a conta com vencimento mais recente. Se ela vencer hoje ou já estiver vencida, cria outra com vencimento 30 dias depois da última. Se o motorista não tiver conta anterior, a rotina não cria a primeira conta.
+Para cada motorista, consulta exclusivamente salários com competência/vencimento definidos. Quando o último vence, gera o próximo mês do calendário, preservando o dia original (dia 31 ajustado ao último dia em fevereiro e restaurado em março). A competência avança um mês independentemente do vencimento. Despesas não interferem na recorrência. Cada motorista é bloqueado em transação própria; nova conta duplicada por motorista/competência é rejeitada. Sem salário anterior válido, a rotina não inventa uma primeira conta.
 
-Para cada aluno com mensalidade maior que zero, aplica a mesma lógica em `conta_receber`. Se ainda não existir cobrança, cria a primeira com vencimento em 30 dias; quando a última vence, cria somente uma nova com vencimento 30 dias depois. A restrição por aluno/data evita duplicidade.
+Para cada aluno não arquivado com mensalidade maior que zero, cria a primeira cobrança em 30 dias se ainda não houver nenhuma. Depois, a recorrência avança um mês do calendário, preservando o dia original e ajustando meses curtos; competência avança separadamente. Lock do aluno e validação por competência impedem novas duplicidades. Cobranças históricas e a restrição por aluno/vencimento são preservadas.
 
 ### 8.3 Pagamento de conta
 
-- a conta precisa existir;
-- contas com status `PAGO` não podem ser pagas novamente;
-- a data é definida como a data atual;
-- sem `valorPago`, usa-se o valor integral da conta;
-- após gravar o pagamento, a conta é marcada como `PAGO`.
+Pagamentos de contas a pagar aceitam parcelas positivas de até duas casas decimais, limitadas ao saldo restante. Sem `valorPago`, quita-se o restante. O backend bloqueia/recarrega a conta antes de apurar os pagamentos, impedindo saldo excedido por concorrência. A data usa o relógio de São Paulo. Apenas a quitação integral marca `PAGO`; pagamentos parciais mantêm `PENDENTE` e o indicador calculado `pagamentoParcial`.
 
-O código também marca a conta como paga quando `valorPago` é inferior ao valor da conta; não existe controle de saldo ou pagamento parcial.
+`Idempotency-Key` opcional recebe UUID em minúsculas. Repetição com a mesma chave e parâmetros retorna o pagamento original; reutilização com outro conteúdo retorna 409. O recibo por conta retorna o pagamento mais recente; `GET /pagamentos/conta/{contaId}` lista todos os comprovantes em ordem decrescente de data/ID. Serviços de pagamentos exigem ADMIN.
+
+Contas com pagamentos não permitem excluir nem alterar valor/beneficiário. Status não é editado pelo CRUD para efetuar/desfazer pagamento. A V9 reconcilia contas com comprovantes sem alterar seus valores; quitações legadas sem comprovantes são preservadas e sinalizadas, sem criar saída fictícia.
 
 ### 8.4 Pagamento da matrícula
 
 Ao cadastrar um aluno, `AlunoService` define `dataCadastro` com a data atual, `statusMatricula=PENDENTE` e cria a primeira `ContaReceber` na mesma transação. A conta usa a mensalidade informada, descrição `Matrícula - <nome>`, vencimento em 30 dias e status `PENDENTE`. Ao editar um aluno antigo não arquivado sem cobrança, a primeira conta é criada automaticamente. Edição de arquivado não gera cobrança.
 
-O pagamento sempre usa o valor integral persistido na conta. A leitura inicial identifica o proprietário e preserva 404 para cobrança alheia. Na mesma transação, bloqueia primeiro o aluno, rejeita arquivado, depois bloqueia/recarrega a conta e revalida propriedade e duplicidade. Cria `Recebimento`, marca `PAGO` e define `statusMatricula=ATIV0`. A operação representa um registro financeiro interno; não existe integração com banco, PIX ou operadora de cartão.
+O pagamento aceita parcelas positivas com até duas casas decimais, limitadas ao saldo; sem valorPago, usa todo o restante. A leitura identifica o proprietário e preserva 404 para cobrança alheia. Na mesma transação, bloqueia primeiro o aluno, rejeita arquivado, depois bloqueia/recarrega a conta e revalida propriedade, idempotência e saldo. Cria Recebimento e mantém PENDENTE enquanto houver saldo; só a quitação marca PAGO e define statusMatricula=ATIV0. Uma parcela não ativa uma matrícula pendente nem revoga uma já ativa. A operação continua sendo registro financeiro interno, sem integração bancária.
 
 ### 8.5 Validação de capacidade da viagem
 
@@ -867,7 +865,7 @@ Comando de validação: `mvn -f target/verificacao-services/pom.xml package`, us
 6. O DTO de aluno aceita mensalidade, mas status e data de cadastro continuam controlados pelo serviço.
 7. O DTO de motorista não aceita tipo de pessoa; o serviço o define automaticamente como `MOTORISTA`.
 8. A capacidade da viagem usa todos os alunos não arquivados com matrícula `ATIV0` das faculdades, pois não existe vínculo aluno-viagem.
-9. Pagamento parcial marca a conta integralmente como `PAGO`.
+9. Quitações legadas sem comprovantes exigem revisão: permanecem quitadas com aviso e não geram saída fictícia no caixa. Pagamentos parciais novos mantêm o saldo aberto.
 10. `PagamentoRepository.findByContaPagarId` espera um resultado, embora o modelo não imponha unicidade.
 11. Pessoa possui camadas internas, mas não API própria; manutenção, contas a receber e recebimentos expõem fluxos específicos, sem CRUD genérico completo.
 12. A validação Bean Validation foi adicionada aos contratos novos de autenticação e usuários, mas os DTOs CRUD antigos ainda não possuem validação completa.
@@ -892,3 +890,59 @@ Comando de validação: `mvn -f target/verificacao-services/pom.xml package`, us
 - **Versão do projeto:** `0.0.1-SNAPSHOT`
 - **Status:** em desenvolvimento; arquivamento implementado no backend, frontend não alterado
 - **Fonte:** implementação atual do repositório
+
+
+## 16. Relatórios financeiros com JasperReports (16/10/2026)
+
+Guia de integração: **GUIA_RELATORIOS_FRONTEND.md**, com contratos completos, exemplos Angular/PrimeNG, download autenticado, tratamento de erros Blob, configuração do saldo base, competência, parcelas e comprovantes.
+
+ADMIN consulta JSON e PDF em `/relatorios/inadimplencia`, `/relatorios/fluxo-caixa` e `/relatorios/acerto-motoristas`; acrescentar `/pdf` para download. O PDF é gerado pelo JasperReports 7.0.8 e pelos módulos oficiais PDF/fontes. Três JRXML em `src/main/resources/relatorios/` são compilados uma vez na inicialização; serviços Java fornecem dados e cálculos BigDecimal. A aplicação requer JDK 21 para compilar os templates em runtime.
+
+Os PDFs usam identidade BusSystem/Aura esmeralda, fonte incorporada, cabeçalhos repetidos, paginação e descrições com quebra de linha. Dados financeiros não são calculados nos templates. Cada consulta é somente leitura com snapshot transacional REPEATABLE_READ; consultas JSON e PDF separadas podem refletir estados diferentes entre suas requisições.
+
+- Inadimplência: posição atual, contas vencidas antes de hoje e não pagas, alunos inclusive arquivados; filtros opcionais alunoId/vencimentoInicio/vencimentoFim, agrupamento por aluno e total geral. Cobranças sem vencimento são identificadas para revisão.
+- Fluxo: datas efetivas de recebimento/pagamento, limites inclusivos, saldo inicial, entradas, saídas e saldo acumulado/final. Exige saldo base e rejeita período anterior à data base. Quitações sem comprovantes não são tratadas como saídas.
+- Acerto: mês de competência obrigatório e motorista opcional, salários/despesas, total previsto/pago e saldo a pagar. Considera todos os pagamentos existentes, inclusive posteriores ao mês selecionado. Dados sem competência são identificados para regularização.
+
+`GET/PUT /financeiro/saldo-base` administra um marco único, correspondente à abertura da data informada. GET retorna 404 antes do cadastro; primeiro PUT usa versao=null e alterações usam a versão retornada, com 409 em conflitos. O saldo pode ser negativo. Nenhum valor real é presumido pela migration.
+
+V9 acrescenta competência/classificação/dia original à conta a pagar, idempotência dos pagamentos, índices de consulta e saldo base versionado. Competência histórica usa mês do vencimento; salários históricos usam descrição exata gerada pelo sistema e subtipo Motorista. Duplicidades históricas não são apagadas. A criação de novos salários é serializada pelo lock de pessoa e rejeita competência repetida. O vínculo genérico de despesas com Pessoa é preservado.
+
+As respostas de contas a pagar passam a DTOs com posição financeira: valorPago, saldoRestante, pagamentoParcial e avisos. Pessoa vinculada é resumida a id/nome/tipoPessoa. O dashboard soma saldos restantes de contas a pagar; movimentações continuam usando os valores efetivos.
+
+Testes novos: RelatoriosIntegrationTests (H2), RelatoriosPostgresIntegrationTests (mesmos cenários mais concorrência real) e RelatoriosPostgresMigrationTests (schema vazio e atualização V8 para V9). PostgreSQL usa RELATORIOS_TEST_DB_URL/USER/PASSWORD e schemas temporários exclusivos test_relatorios_*. PDFs de exemplo com dados fictícios são gerados em target/relatorios-exemplos/.
+
+
+### Validação final da entrega de relatórios
+
+Em 16/10/2026, `package` com JDK 21.0.8 terminou com **BUILD SUCCESS: 241 testes, zero falhas, zero erros e zero ignorados**. Todas as famílias PostgreSQL foram habilitadas em schemas temporários próprios, incluindo V8→V9, banco vazio e disputa real por saldo de pagamento. O schema público não foi migrado por essa validação; não houve SMTP real, commit ou push.
+
+Os 39 testes novos são 18 cenários H2, os mesmos 18 no PostgreSQL mais um de concorrência e dois de migration. Cobrem pagamentos parciais/quitação/idempotência/histórico, competência, dia 31/fevereiro/ano bissexto/virada de ano, filtros, saldos, avisos, autorização, CORS e exportação PDF.
+
+Foram gerados três PDFs de exemplo com 45 lançamentos cada, totalizando 16 páginas, e três exemplos vazios. As páginas foram renderizadas com Poppler e inspecionadas; acentos, descrições extensas, totais, ordenação, cabeçalhos/rodapés e fontes incorporadas foram conferidos. Artefatos de QA ficam em target/relatorios-exemplos; o JAR atualizado está em target/integrador-0.0.1-SNAPSHOT.jar.
+
+Para ativar a entrega no sistema, reiniciar o backend com o código/JAR atualizado, permitindo ao Flyway aplicar a V9 no banco configurado. Antes do primeiro fluxo de caixa, ADMIN deve cadastrar o saldo base real. A interface Angular continua sendo a etapa descrita no GUIA_RELATORIOS_FRONTEND.md.
+
+
+## 17. Contas a receber com parcelas e calendário mensal (16/10/2026)
+
+Guia separado: **GUIA_CONTAS_RECEBER_FRONTEND.md**, com contratos, service Angular, adaptação do PagamentoMatricula, recuperação de falhas, histórico e administração. O frontend não foi modificado.
+
+V10 transforma o vínculo Recebimento→ContaReceber em muitos-para-um, remove a exclusividade de um recebimento por cobrança, adiciona chave de idempotência e competência/dia original. Preenche dados antigos pelo vencimento e reconcilia status com recebimentos comprovados, sem alterar comprovantes ou o status cadastral dos alunos. Quitações sem comprovantes continuam quitadas e sinalizadas; não geram entrada fictícia. Duplicidades históricas de competência não são apagadas.
+
+A listagem preserva campos existentes e acrescenta competencia (yyyy-MM), valorRecebido, saldoRestante, recebimentoParcial e avisos. Dashboard do aluno recebe os mesmos campos na cobrança principal; totais administrativos e do aluno usam saldos restantes. Relatório de inadimplência mantém valor nominal e acrescenta os campos financeiros, totalizando saldo restante; o PDF mostra original/recebido/competência. O fluxo soma cada parcela na data efetiva.
+
+POST /recebimentos/realizar/{contaId} continua exclusivo de ALUNO, com conta própria identificada pelo JWT. Aceita valorPago opcional e Idempotency-Key UUID opcional. Repetição com os mesmos parâmetros retorna o recibo original; chave com outro conteúdo retorna 409. GET /recebimentos/recibo/conta/{contaId} retorna o mais recente; GET /recebimentos/conta/{contaId} retorna todo o histórico. Ambas as leituras validam propriedade; histórico vazio retorna []. Arquivado não recebe novos pagamentos; quitação é a condição para ativar uma matrícula pendente.
+
+ADMIN possui GET /contareceber/buscar-contareceber/{id}, POST /contareceber/salvar-contareceber, PUT /contareceber/atualizar-contareceber/{id} e DELETE /contareceber/deletar-contareceber/{id}, além da listagem existente. DTO administrativo exige aluno, vencimento e valor positivo com até duas casas decimais. Competência omitida usa mês do vencimento. Novas duplicidades de aluno/competência são rejeitadas. Após recebimento ou quitação histórica, valor/aluno e exclusão são protegidos. Descrição, competência e vencimento podem ser corrigidos sem apagar os recebimentos; edição manual do vencimento redefine o dia recorrente. Status financeiro é controlado pelo recebimento, não por edição manual.
+
+A rotina mensal segue ignorando arquivados e não reinicia uma sequência ao restaurar um aluno. Primeiro vencimento continua em 30 dias; próximos vencimentos avançam um mês, com retorno ao dia original após fevereiro. Não há classificação SALARIO/DESPESA em mensalidades.
+
+Testes adicionais: ContasReceberIntegrationTests, ContasReceberPostgresIntegrationTests e ContasReceberPostgresMigrationTests. PostgreSQL usa RECEBER_TEST_DB_URL/USER/PASSWORD e schemas temporários exclusivos test_receber_*. Incluem concorrência real para saldo e chave idempotente, isolamento por aluno, calendário, regras de ativação e migração V9→V10.
+
+
+### Validação final da V10
+
+Em 16/10/2026, o build package com JDK 21.0.8 terminou com **275 testes, zero falhas, zero erros e zero ignorados; BUILD SUCCESS**. Os 34 cenários novos são 15 H2, os mesmos 15 no PostgreSQL mais duas disputas reais de saldo/idempotência e dois testes de migration. Todas as famílias PostgreSQL existentes também foram habilitadas, usando apenas schemas temporários próprios. Nenhuma migration foi aplicada ao schema público por essa validação.
+
+O PDF JasperReports de inadimplência parcial foi renderizado com Poppler e inspecionado: cobrança original de R$ 300, recebimento de R$ 100, saldo em aberto de R$ 200, competência, acentos e paginação conferidos. O JAR atualizado contém a V10. O frontend, dados reais de alunos e configuração real de caixa não foram alterados; não houve SMTP real, commit ou push.

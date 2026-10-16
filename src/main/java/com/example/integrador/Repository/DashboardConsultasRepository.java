@@ -19,6 +19,10 @@ import java.util.Map;
 @Repository
 public class DashboardConsultasRepository {
     private final EntityManager em;
+    private final ContaPagarRepository contasPagar;
+    private final PosicaoContaPagarRepository posicoes;
+    private final ContaReceberRepository contasReceber;
+    private final PosicaoContaReceberRepository posicoesReceber;
     private static final String VIAGEM = """
             select new com.example.integrador.DTO.ViagemDashboardBase(
                 v.id, g.id, g.diaSemana, g.descricao, r.id,
@@ -28,14 +32,14 @@ public class DashboardConsultasRepository {
             left join v.onibus o left join v.motorista m
             """;
 
-    public enum TipoConta {
-        RECEBER("ContaReceber", "aluno"), PAGAR("ContaPagar", "motorista");
-        private final String entidade;
-        private final String pessoa;
-        TipoConta(String entidade, String pessoa) { this.entidade = entidade; this.pessoa = pessoa; }
-    }
+    public enum TipoConta { RECEBER, PAGAR }
 
-    public DashboardConsultasRepository(EntityManager em) { this.em = em; }
+    public DashboardConsultasRepository(EntityManager em, ContaPagarRepository contasPagar,
+            PosicaoContaPagarRepository posicoes, ContaReceberRepository contasReceber,
+            PosicaoContaReceberRepository posicoesReceber) {
+        this.em = em; this.contasPagar = contasPagar; this.posicoes = posicoes;
+        this.contasReceber = contasReceber; this.posicoesReceber = posicoesReceber;
+    }
 
     public List<ViagemDashboardBase> viagensAluno(Long faculdadeId) {
         if (faculdadeId == null) return List.of();
@@ -85,24 +89,47 @@ public class DashboardConsultasRepository {
     }
 
     public Object[] resumoContas(TipoConta tipo, LocalDate hoje) {
-        // Não há joins nesta agregação: cada conta é contada/somada uma única vez.
-        return em.createQuery("""
-                select count(c), coalesce(sum(c.valor), 0),
-                    coalesce(sum(case when c.dataVencimento < :hoje then 1 else 0 end), 0),
-                    coalesce(sum(case when c.dataVencimento < :hoje then c.valor else 0 end), 0),
-                    coalesce(sum(case when c.dataVencimento >= :hoje and c.dataVencimento < :fim then 1 else 0 end), 0),
-                    coalesce(sum(case when c.dataVencimento >= :hoje and c.dataVencimento < :fim then c.valor else 0 end), 0)
-                from %s c where c.status <> :pago or c.status is null
-                """.formatted(tipo.entidade), Object[].class)
-                .setParameter("hoje", hoje).setParameter("fim", hoje.plusDays(7))
-                .setParameter("pago", StatusFinanceiro.PAGO).getSingleResult();
+        long total = 0, vencidas = 0, proximas = 0;
+        BigDecimal valor = BigDecimal.ZERO, valorVencidas = BigDecimal.ZERO, valorProximas = BigDecimal.ZERO;
+        for (var c : abertas(tipo)) {
+            total++; valor = valor.add(c.saldo());
+            if (c.vencimento() == null) continue;
+            if (c.vencimento().isBefore(hoje)) { vencidas++; valorVencidas = valorVencidas.add(c.saldo()); }
+            else if (c.vencimento().isBefore(hoje.plusDays(7))) { proximas++; valorProximas = valorProximas.add(c.saldo()); }
+        }
+        return new Object[]{total, valor, vencidas, valorVencidas, proximas, valorProximas};
     }
 
     public List<Object[]> pendencias(TipoConta tipo) {
-        return em.createQuery("select c.id, c.descricao, c.valor, c.dataVencimento, c.status, p.nome from "
-                        + tipo.entidade + " c left join c." + tipo.pessoa + " p where c.status <> :pago or c.status is null"
-                        + " order by c.dataVencimento asc nulls last, c.id", Object[].class)
-                .setParameter("pago", StatusFinanceiro.PAGO).setMaxResults(5).getResultList();
+        return abertas(tipo).stream().limit(5).map(c -> new Object[]{c.id(), c.descricao(), c.saldo(),
+                c.vencimento(), c.status(), c.nome()}).toList();
+    }
+
+    private record SaldoAberto(Long id, String descricao, LocalDate vencimento,
+                              StatusFinanceiro status, String nome, BigDecimal saldo) {}
+
+    private List<SaldoAberto> abertas(TipoConta tipo) {
+        List<SaldoAberto> resultado = new java.util.ArrayList<>();
+        if (tipo == TipoConta.PAGAR) {
+            var contas = contasPagar.listarPotencialmenteAbertas(); var saldos = posicoes.calcular(contas);
+            for (var c : contas) {
+                var saldo = saldos.get(c.getId()).saldoRestante();
+                if (saldo.signum() <= 0 && !(c.getValor() == null && c.getStatus() != StatusFinanceiro.PAGO)) continue;
+                resultado.add(new SaldoAberto(c.getId(), c.getDescricao(), c.getDataVencimento(),
+                        c.getStatus() == StatusFinanceiro.PAGO ? StatusFinanceiro.PENDENTE : c.getStatus(),
+                        c.getMotorista() == null ? null : c.getMotorista().getNome(), saldo));
+            }
+        } else {
+            var contas = contasReceber.listarPotencialmenteAbertas(); var saldos = posicoesReceber.calcular(contas);
+            for (var c : contas) {
+                var saldo = saldos.get(c.getId()).saldoRestante();
+                if (saldo.signum() <= 0 && !(c.getValor() == null && c.getStatus() != StatusFinanceiro.PAGO)) continue;
+                resultado.add(new SaldoAberto(c.getId(), c.getDescricao(), c.getDataVencimento(),
+                        c.getStatus() == StatusFinanceiro.PAGO ? StatusFinanceiro.PENDENTE : c.getStatus(),
+                        c.getAluno().getNome(), saldo));
+            }
+        }
+        return resultado;
     }
 
     public Map<YearMonth, BigDecimal> recebimentos(LocalDate inicio, LocalDate fim) {

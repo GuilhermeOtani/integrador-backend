@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
+import java.math.BigDecimal;
+import java.util.List;
 
 @RestController
 @RequestMapping("/recebimentos")
@@ -24,9 +27,16 @@ public class RecebimentoController {
     public RecebimentoResponse realizarPagamento(
             @PathVariable Long contaId,
             @RequestParam FormaPagamento formaPagamento,
+            @RequestParam(required = false) BigDecimal valorPago,
+            @RequestHeader(value = "Idempotency-Key", required = false) String chave,
             JwtAuthenticationToken authentication) {
         return recebimentoService.realizarPagamento(
-                contaId, formaPagamento, pessoaId(authentication));
+                contaId, formaPagamento, pessoaId(authentication), valorPago, chave);
+    }
+
+    @GetMapping("/conta/{contaId}")
+    public List<RecebimentoResponse> listarPorConta(@PathVariable Long contaId, JwtAuthenticationToken authentication) {
+        return recebimentoService.listarPorConta(contaId, pessoaId(authentication));
     }
 
     @GetMapping("/recibo/conta/{contaId}")

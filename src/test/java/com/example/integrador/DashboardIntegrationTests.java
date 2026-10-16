@@ -57,6 +57,7 @@ class DashboardIntegrationTests {
     void preparar() {
         SecurityContextHolder.clearContext();
         when(dashboardClock.instant()).thenReturn(Instant.parse("2026-10-12T15:00:00Z"));
+        when(dashboardClock.getZone()).thenReturn(ZoneId.of("America/Sao_Paulo"));
         usuarios.criarAdmin(new CriarAdminRequest("Admin Dashboard", "admin@dashboard.test", "SenhaTeste123"));
         adminToken = token("admin@dashboard.test");
         faculdade = faculdade("Faculdade do aluno");
@@ -275,8 +276,8 @@ class DashboardIntegrationTests {
         assertThat(financeiro.serieMensal()).hasSize(6);
         assertThat(financeiro.serieMensal().getFirst().mes()).isEqualTo("2026-05");
         assertThat(financeiro.serieMensal().getFirst().recebido()).isEqualByComparingTo("50.00");
-        assertThat(financeiro.contasReceber().emAberto().valor()).isEqualByComparingTo("101.00");
-        assertThat(financeiro.contasReceber().vencidas().quantidade()).isEqualTo(1);
+        assertThat(financeiro.contasReceber().emAberto().valor()).isEqualByComparingTo("397.70");
+        assertThat(financeiro.contasReceber().vencidas().quantidade()).isEqualTo(3);
         assertThat(financeiro.contasReceber().vencemEmSeteDias().quantidade()).isEqualTo(2);
         assertThat(financeiro.contasReceber().vencemEmSeteDias().valor()).isEqualByComparingTo("50.50");
     }

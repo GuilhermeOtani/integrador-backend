@@ -3,6 +3,7 @@ package com.example.integrador.Model;
 
 import com.example.integrador.Enum.FormaPagamento;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -25,7 +26,14 @@ public class Recebimento {
     @Enumerated(EnumType.STRING)
     private FormaPagamento formaPagamento;
 
-    @OneToOne(optional = false)
-    @JoinColumn(name = "conta_receber_id", nullable = false, unique = true)
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "conta_receber_id", nullable = false)
     private ContaReceber contaReceber;
+
+    @JsonIgnore
+    @Column(length = 36, unique = true)
+    private String chaveIdempotencia;
+
+    @JsonIgnore
+    private String requisicaoIdempotencia;
 }

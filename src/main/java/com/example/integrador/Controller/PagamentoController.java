@@ -23,9 +23,15 @@ public class PagamentoController {
     public Pagamento realizarPagamento(
             @PathVariable Long contaId,
             @RequestParam FormaPagamento formaPagamento,
-            @RequestParam(required = false) BigDecimal valorPago) {
+            @RequestParam(required = false) BigDecimal valorPago,
+            @RequestHeader(value = "Idempotency-Key", required = false) String chave) {
 
-        return pagamentoService.realizarPagamento(contaId, formaPagamento, valorPago);
+        return pagamentoService.realizarPagamento(contaId, formaPagamento, valorPago, chave);
+    }
+
+    @GetMapping("/conta/{contaId}")
+    public java.util.List<ReciboDTO> listarPorConta(@PathVariable Long contaId) {
+        return pagamentoService.listarPorConta(contaId);
     }
 
     @GetMapping("/recibo/conta/{contaId}")
