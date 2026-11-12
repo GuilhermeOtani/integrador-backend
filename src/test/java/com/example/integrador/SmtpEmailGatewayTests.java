@@ -2,12 +2,19 @@ package com.example.integrador;
 
 import com.example.integrador.Email.*;
 import jakarta.mail.Session;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Transport;
 import jakarta.mail.internet.MimeMessage;
+import org.eclipse.angus.mail.util.MailConnectException;
+import org.eclipse.angus.mail.util.SocketConnectException;
 import org.junit.jupiter.api.Test;
 import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
@@ -65,5 +72,59 @@ class SmtpEmailGatewayTests {
                 .isInstanceOfSatisfying(EmailEnvioException.class, e -> {
                     assertThat(e.isRepetivel()).isFalse(); assertThat(e.isIncerto()).isTrue();
                 });
+    }
+    @Test void timeoutAoAbrirConexaoRealDoSpringPermiteRepetirMesmoComMapaDeFalhas() {
+        properties.setFrom("transporte@example.test");
+        var desconectado = new JavaMailSenderImpl() {
+            @Override protected Transport connectTransport() throws MessagingException {
+                throw new MailConnectException(new SocketConnectException("Conexão expirou",
+                        new SocketTimeoutException("Connect timed out"), "smtp.example.test", 587, 5000));
+            }
+        };
+        var gatewayReal = new SmtpEmailGateway(desconectado, properties);
+        assertThatThrownBy(() -> gatewayReal.enviar(UUID.randomUUID(), "aluno@example.test", conteudo))
+                .isInstanceOfSatisfying(EmailEnvioException.class, e -> {
+                    assertThat(e.getMessage()).isEqualTo("CONEXAO_SMTP");
+                    assertThat(e.isIncerto()).isFalse();
+                    assertThat(e.isRepetivel()).isTrue();
+                });
+    }
+    @Test void conexaoRecusadaComMensagemNoMapaDeFalhasPermiteRepetir() {
+        MimeMessage mensagem = mensagem();
+        doThrow(new MailSendException(Map.of(mensagem, new ConnectException("Conexão recusada"))))
+                .when(sender).send(any(MimeMessage.class));
+        assertThatThrownBy(() -> gateway.enviar(UUID.randomUUID(), "aluno@example.test", conteudo))
+                .isInstanceOfSatisfying(EmailEnvioException.class, e -> {
+                    assertThat(e.getMessage()).isEqualTo("CONEXAO_SMTP");
+                    assertThat(e.isIncerto()).isFalse();
+                    assertThat(e.isRepetivel()).isTrue();
+                });
+    }
+    @Test void timeoutDuranteEnvioComMensagemNoMapaDeFalhasContinuaIncerto() {
+        MimeMessage mensagem = mensagem();
+        doThrow(new MailSendException(Map.of(mensagem, new SocketTimeoutException("Read timed out"))))
+                .when(sender).send(any(MimeMessage.class));
+        assertThatThrownBy(() -> gateway.enviar(UUID.randomUUID(), "aluno@example.test", conteudo))
+                .isInstanceOfSatisfying(EmailEnvioException.class, e -> {
+                    assertThat(e.getMessage()).isEqualTo("RESULTADO_SMTP_INCERTO");
+                    assertThat(e.isIncerto()).isTrue();
+                    assertThat(e.isRepetivel()).isFalse();
+                });
+    }
+    @Test void falhaAoFecharConexaoDepoisDoEnvioNaoPodeProvocarDuplicata() throws Exception {
+        properties.setFrom("transporte@example.test");
+        Transport transporte = mock(Transport.class);
+        doThrow(new MessagingException("Erro ao fechar", new SocketTimeoutException("Read timed out")))
+                .when(transporte).close();
+        var remetente = new JavaMailSenderImpl() {
+            @Override protected Transport connectTransport() { return transporte; }
+        };
+        var gatewayReal = new SmtpEmailGateway(remetente, properties);
+        assertThatThrownBy(() -> gatewayReal.enviar(UUID.randomUUID(), "aluno@example.test", conteudo))
+                .isInstanceOfSatisfying(EmailEnvioException.class, e -> {
+                    assertThat(e.isIncerto()).isTrue();
+                    assertThat(e.isRepetivel()).isFalse();
+                });
+        verify(transporte).sendMessage(any(MimeMessage.class), any());
     }
 }

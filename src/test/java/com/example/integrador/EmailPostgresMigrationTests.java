@@ -10,6 +10,56 @@ import static org.assertj.core.api.Assertions.*;
 @EnabledIfEnvironmentVariable(named = "EMAIL_TEST_DB_URL", matches = ".+")
 class EmailPostgresMigrationTests {
     @Test
+    void bancoVazioTerminaSemTabelasWhatsAppEPreservaHistoricoFlyway() throws Exception {
+        emSchemaTemporario((schema, connection) -> {
+            assertThat(flyway(schema, "11").migrate().migrationsExecuted).isEqualTo(11);
+            flyway(schema, "11").validate();
+            verificarAusenciaWhatsApp(connection);
+            try (var sql = connection.createStatement(); var rows = sql.executeQuery(
+                    "SELECT count(*) FROM flyway_schema_history WHERE success AND version IN ('6','11')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isEqualTo(2);
+            }
+        });
+    }
+
+    @Test
+    void remocaoApagaSomenteWhatsAppMesmoComDadosLegados() throws Exception {
+        emSchemaTemporario((schema, connection) -> {
+            flyway(schema, "10").migrate();
+            executar(connection, "INSERT INTO pessoa(id,dtype,nome,tipo_pessoa) VALUES(101,'Aluno','Aluno preservado','ALUNO')");
+            executar(connection, "INSERT INTO usuario(id,email,senha,tipo_pessoa,pessoa_id) VALUES(201,'aluno@migration.test','hash','ALUNO',101)");
+            executar(connection, "INSERT INTO viagem(id,data) VALUES(301,'2000-01-01')");
+            UUID lote = UUID.randomUUID();
+            executar(connection, "INSERT INTO whatsapp_assinatura(usuario_id,numero,status,consentimento_em,janela_ativacoes,ativacoes_na_janela,revisao) VALUES(201,'+5511999999999','ATIVA',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,0,0)");
+            executar(connection, "INSERT INTO whatsapp_lote(id,data_referencia,origem,publico,reenvio,criado_em,solicitante_id) VALUES('" + lote + "',CURRENT_DATE,'MANUAL','TODOS',FALSE,CURRENT_TIMESTAMP,201)");
+            executar(connection, "INSERT INTO whatsapp_entrega(id,lote_id,usuario_id,destinatario_original_id,nome_destinatario,numero,data_referencia,revisao,assinatura_revisao,referencia,status,criado_em) VALUES('" + UUID.randomUUID() + "','" + lote + "',201,201,'Aluno preservado','+5511999999999',CURRENT_DATE,0,0,'legado','PENDENTE',CURRENT_TIMESTAMP)");
+            executar(connection, "INSERT INTO email_lote(id,data_referencia,origem,criado_em,assunto,texto,html,solicitante_id) VALUES('" + lote + "',CURRENT_DATE,'MANUAL',CURRENT_TIMESTAMP,'Programação','Conteúdo preservado','<p>Conteúdo preservado</p>',201)");
+            executar(connection, "INSERT INTO email_entrega(id,lote_id,usuario_id,email,data_referencia,estado,proxima_tentativa) VALUES('" + UUID.randomUUID() + "','" + lote + "',201,'aluno@migration.test',CURRENT_DATE,'PENDENTE',CURRENT_TIMESTAMP)");
+            assertThat(flyway(schema, "11").migrate().migrationsExecuted).isEqualTo(1);
+            flyway(schema, "11").validate();
+            verificarAusenciaWhatsApp(connection);
+            try (var sql = connection.createStatement(); var rows = sql.executeQuery(
+                    "SELECT p.nome,u.email,v.data,l.texto,e.estado FROM pessoa p JOIN usuario u ON u.pessoa_id=p.id CROSS JOIN viagem v CROSS JOIN email_lote l JOIN email_entrega e ON e.lote_id=l.id WHERE p.id=101 AND v.id=301")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("Aluno preservado");
+                assertThat(rows.getString(2)).isEqualTo("aluno@migration.test");
+                assertThat(rows.getDate(3).toLocalDate()).isEqualTo(java.time.LocalDate.of(2000, 1, 1));
+                assertThat(rows.getString(4)).isEqualTo("Conteúdo preservado");
+                assertThat(rows.getString(5)).isEqualTo("PENDENTE");
+            }
+        });
+    }
+
+    private void verificarAusenciaWhatsApp(Connection connection) throws SQLException {
+        try (var sql = connection.createStatement(); var rows = sql.executeQuery(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name LIKE 'whatsapp_%'")) {
+            assertThat(rows.next()).isTrue();
+            assertThat(rows.getInt(1)).isZero();
+        }
+    }
+
+    @Test
     void bancoVazioRecebeSeteMigracoesComAutomaticoDesativado() throws Exception {
         emSchemaTemporario((schema, connection) -> {
             assertThat(flyway(schema, "7").migrate().migrationsExecuted).isEqualTo(7);

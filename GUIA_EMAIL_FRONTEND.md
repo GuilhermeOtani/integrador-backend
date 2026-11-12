@@ -29,9 +29,9 @@ A integração e o automático começam desativados. É possível consultar conf
 Enviar ou habilitar o automático requer configuração válida.
 
 O banco atual já aplicou a V6 do WhatsApp. Por isso, seu SQL original permanece apenas para compatibilidade Flyway; a funcionalidade nova está em `V7__programacao_email.sql`.
-Não apagar tabelas antigas, alterar checksums, executar `flyway repair` ou editar o histórico manualmente.
+A V11 remove as quatro tabelas WhatsApp e seus registros legados. Não alterar a V6, checksums ou histórico manualmente.
 Não existem classes, endpoints, credenciais ou rotinas de WhatsApp nessa branch.
-Os dados antigos são preservados; as tabelas antigas ficam sem uso. Em bancos novos, V1–V8 são aplicadas: V7 implementa e-mail e V8 acrescenta arquivamento de alunos.
+E-mail, usuários e demais cadastros são preservados. Em bancos novos, V1–V11 são aplicadas e o esquema final não contém tabelas WhatsApp. Nenhuma alteração de contrato ou tela de e-mail é necessária.
 
 Antes de trocar branches em um ambiente importante, fazer backup. Reiniciar o backend usando a nova branch, para não continuar executando o processo antigo.
 
@@ -728,7 +728,8 @@ Não há webhook de entrega, confirmação de leitura, acompanhamento de abertur
 A mensagem pode ser encaminhada para spam ou rejeitada posteriormente pelo destino mesmo após aceite SMTP.
 
 A fila reserva no máximo uma entrega por segundo. Somente falhas comprovadamente anteriores ao envio podem ser repetidas, até quatro tentativas totais, com intervalos de 1, 5 e 15 minutos.
-Timeout/resultado ambíguo não é repetido automaticamente.
+Timeout ao abrir a conexão, conexão recusada e falha de DNS usam `erro = CONEXAO_SMTP`: a entrega permanece PENDENTE enquanto há tentativas e termina em FALHA quando elas se esgotam. Mostrar uma orientação para verificar a rede/conexão com o servidor de e-mail. Esse erro não indica que o provedor recebeu a mensagem.
+Timeout após iniciar o envio/resultado ambíguo continua INCERTA e não é repetido automaticamente. Registros antigos INCERTA não são reclassificados, pois a causa detalhada não foi preservada.
 
 Reservas abandonadas por mais de dez minutos viram INCERTA, sem reenvio automático.
 Entregas automáticas pendentes expiram às 18h. Manuais expiram na virada do dia de São Paulo.

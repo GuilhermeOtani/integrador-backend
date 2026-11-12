@@ -259,7 +259,7 @@ Possui controller, DTOs, repository e serviço com autorização. Não expõe CR
 
 Unicidade por data/endereço/revisão impede duplicidade. IDs históricos de usuário não possuem FK: excluir o acesso não apaga entregas e não impede a operação já existente. A relação entrega–lote possui FK.
 
-As quatro tabelas `whatsapp_*` criadas pela V6 permanecem apenas por compatibilidade com o banco que já aplicou a migration; não possuem entidades, controllers ou rotinas nesta branch. Não há funcionalidade de WhatsApp ativa.
+A integração WhatsApp foi descontinuada. A V6 original permanece no histórico do Flyway, mas a V11 remove suas quatro tabelas (`whatsapp_entrega`, `whatsapp_assinatura`, `whatsapp_lote` e `whatsapp_configuracao`), inclusive os registros legados. Não há entidades, endpoints ou rotinas de WhatsApp. E-mail e os demais cadastros não são alterados.
 
 ## 6. DTOs e contratos específicos
 
@@ -624,7 +624,7 @@ Envio manual normal já registrado impede repetição normal para o mesmo endere
 
 A fila persistida reserva atomicamente sob lock curto, com ritmo global de até uma entrega por segundo. O SMTP ocorre fora de transações de banco. Antes de enviar, a conta é revalidada: ativa, aluno não arquivado, papel permitido e mesmo endereço atual. Conta excluída/inativa, aluno arquivado ou e-mail alterado suprime a entrega preparada. Não existe opção de consentimento individual ou cancelamento por e-mail nesta versão; o envio operacional contempla todos os associados ativos conforme decisão confirmada.
 
-Estados: `PENDENTE`, `PROCESSANDO`, `ACEITA_SMTP`, `FALHA`, `INCERTA`, `SUPRIMIDA`, `EXPIRADA`. Falhas comprovadamente anteriores ao envio podem ter três novas tentativas, após 1, 5 e 15 minutos. Timeout/resultado ambíguo fica INCERTA sem repetição automática. Processamentos abandonados por mais de dez minutos também ficam INCERTA. Pendências automáticas expiram às 18h; manuais, na virada do dia de São Paulo.
+Estados: `PENDENTE`, `PROCESSANDO`, `ACEITA_SMTP`, `FALHA`, `INCERTA`, `SUPRIMIDA`, `EXPIRADA`. Falhas comprovadamente anteriores ao envio podem ter três novas tentativas, após 1, 5 e 15 minutos. Timeout durante a abertura da conexão, conexão recusada e falha de DNS usam `CONEXAO_SMTP`, inclusive quando o Spring preenche o mapa de mensagens com falha. Timeout após iniciar o envio/resultado ambíguo fica INCERTA sem repetição automática. Os logs registram somente ID da entrega, código seguro e classe da causa, sem mensagens SMTP brutas. Processamentos abandonados por mais de dez minutos também ficam INCERTA. Pendências automáticas expiram às 18h; manuais, na virada do dia de São Paulo.
 
 Texto e HTML são gerados em UTF-8, com escape de conteúdo cadastrado. O gateway usa um destinatário por mensagem, TLS e timeouts de conexão/leitura/escrita. Não há chamadas SMTP na inicialização nem nos testes automatizados.
 
@@ -768,10 +768,11 @@ O elemento Maven inválido que bloqueava a compilação foi removido. O schema a
 - `V3__administracao_segura_usuario.sql`: adiciona `usuario.ativo BOOLEAN NOT NULL DEFAULT TRUE` e `usuario.token_version BIGINT NOT NULL DEFAULT 0`, preservando as contas existentes;
 - `V4__matricula_contas_receber.sql`: torna obrigatórios os vínculos financeiros e impede recebimento duplicado e duas cobranças do mesmo aluno no mesmo vencimento;
 - `V5__chamados_manutencao.sql`: amplia a descrição para 2.000, adiciona observação administrativa, obrigatoriedade dos campos, validação de descrição não vazia e índices; mantém `responsavel_id` e as FKs existentes. Falha com mensagem clara se houver chamado legado incompleto, sem apagar registros nem inventar autor;
-- `V6__notificacoes_whatsapp.sql`: SQL original mantido por compatibilidade com bancos que já aplicaram essa versão; código da integração antiga não está nesta branch e dados legados não são apagados;
+- `V6__notificacoes_whatsapp.sql`: SQL original mantido para preservar o histórico/checksum; suas tabelas e registros são removidos pela V11;
 - `V7__programacao_email.sql`: cria configuração inicialmente desativada, lotes, entregas, unicidade diária/revisão e índices da fila; não altera pessoas, contas ou viagens existentes;
 - `V8__arquivamento_alunos.sql`: adiciona `pessoa.arquivado BOOLEAN NOT NULL DEFAULT FALSE`, mantendo todos os registros inicialmente não arquivados, sem alterar relações financeiras;
 - em um PostgreSQL antigo sem histórico Flyway, `baseline-on-migrate=true` registra a versão 1 e aplica as evoluções posteriores;
+- `V11__remocao_whatsapp_legado.sql`: remove somente as quatro tabelas WhatsApp legadas, sem CASCADE e sem alterar o armazenamento de e-mail ou outros módulos;
 - depois das migrações, Hibernate usa `ddl-auto=validate` e falha se o mapeamento divergir do banco.
 
 Antes de executar a migração em um ambiente importante, faça backup do banco. Os registros existentes de `pessoa` não são apagados.
@@ -880,7 +881,7 @@ Comando de validação: `mvn -f target/verificacao-services/pom.xml package`, us
 21. E-mail depende de provedor SMTP, credencial/remetente válidos e backend ligado; limites e reputação são definidos pelo provedor.
 22. Aceite SMTP não comprova entrega/leitura; não há webhooks de entrega, rastreamento de abertura, PDF ou cancelamento individual nessa versão.
 23. O detalhe do lote inclui todas as entregas, sem paginação individual; listas grandes podem exigir paginação futura.
-24. Tabelas WhatsApp legadas permanecem por segurança do histórico Flyway, mas o código da funcionalidade antiga não está nesta branch.
+24. A V11 remove somente as quatro tabelas WhatsApp legadas e seus registros, preservando a V6 original e a integração de e-mail.
 
 ---
 
